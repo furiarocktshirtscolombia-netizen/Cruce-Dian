@@ -4,10 +4,22 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-hiopos-bg: #F4F6F9;
+  --color-hiopos-card: #FFFFFF;
+  --color-hiopos-line: #D8E2EF;
+  --color-hiopos-txt: #1F2937;
+  --color-hiopos-muted: #6B7280;
+  --color-hiopos-primary: #1E88E5;
+  --color-hiopos-primary-dark: #1565C0;
+  --color-hiopos-header: #CFE8FF;
+  --color-hiopos-header-hover: #E9F4FF;
+  --color-hiopos-ok: #16A34A;
+  --color-hiopos-bad: #DC2626;
 }
 
 @layer base {
   body {
-    @apply antialiased;
+    @apply bg-hiopos-bg text-hiopos-txt font-sans antialiased;
   }
 }

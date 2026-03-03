@@ -327,117 +327,95 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0b1220] text-[#eaf0ff] font-sans selection:bg-blue-500/30">
-      <div className="max-w-7xl mx-auto px-4 py-8 md:px-8">
+    <div className="min-h-screen bg-hiopos-bg text-hiopos-txt font-sans selection:bg-hiopos-primary/30">
+      <div className="max-w-6xl mx-auto px-4 py-8 md:px-8">
         {/* Header */}
-        <header className="mb-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-600 rounded-lg">
-              <ArrowRightLeft className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight">Cruce DIAN vs HIOPOS</h1>
+        <header className="mb-8">
+          <div className="flex items-baseline gap-3 mb-1 flex-wrap">
+            <h1 className="text-2xl font-bold text-hiopos-txt">Cruce DIAN vs HIOPOS</h1>
+            <span className="text-hiopos-muted text-sm">Auditoría Contable Sam Cher</span>
           </div>
-          <p className="text-[#9fb1d1] text-lg">
+          <p className="text-hiopos-muted text-sm">
             Sube los reportes de facturación para identificar discrepancias entre la DIAN y el sistema HIOPOS.
           </p>
         </header>
 
         {/* Upload Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <motion.div 
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-[#111a2e] border border-[#22304f] rounded-2xl p-6 shadow-xl"
+            className="bg-hiopos-card border border-hiopos-line rounded-xl p-5 shadow-sm"
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-400" />
-                <span className="text-sm font-semibold uppercase tracking-wider text-[#9fb1d1]">Archivo DIAN</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-hiopos-muted">Archivo DIAN</span>
               </div>
-              {dianData && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+              {dianData && <CheckCircle2 className="w-4 h-4 text-hiopos-ok" />}
             </div>
-            <p className="text-sm text-[#9fb1d1] mb-4">Debe contener la columna <span className="text-white font-mono">FACTURA</span>.</p>
-            <div className="relative group">
+            <label className="block text-xs text-hiopos-muted mb-2">Debe contener la columna <span className="font-mono font-bold">FACTURA</span></label>
+            <div className="relative">
               <input 
                 ref={fileDianRef}
                 type="file" 
                 accept=".xlsx,.xls"
                 onChange={(e) => handleFileChange(e, 'dian')}
-                className="hidden"
+                className="w-full bg-white border border-hiopos-line text-hiopos-muted rounded-lg p-2 text-sm cursor-pointer file:hidden"
                 id="dian-upload"
               />
-              <label 
-                htmlFor="dian-upload"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[#22304f] rounded-xl cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
-              >
-                <Upload className="w-8 h-8 mb-2 text-[#9fb1d1] group-hover:text-blue-400" />
-                <span className="text-sm text-[#9fb1d1] group-hover:text-blue-400 font-medium">
-                  {dianData ? "Cambiar archivo" : "Seleccionar DIAN.xlsx"}
-                </span>
-              </label>
             </div>
           </motion.div>
 
           <motion.div 
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="bg-[#111a2e] border border-[#22304f] rounded-2xl p-6 shadow-xl"
+            className="bg-hiopos-card border border-hiopos-line rounded-xl p-5 shadow-sm"
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-sm font-semibold uppercase tracking-wider text-[#9fb1d1]">Archivo HIOPOS</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-hiopos-muted">Archivo HIOPOS</span>
               </div>
-              {hioposData && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+              {hioposData && <CheckCircle2 className="w-4 h-4 text-hiopos-ok" />}
             </div>
-            <p className="text-sm text-[#9fb1d1] mb-4">Debe contener la columna <span className="text-white font-mono">Su Doc</span>.</p>
-            <div className="relative group">
+            <label className="block text-xs text-hiopos-muted mb-2">Debe contener la columna <span className="font-mono font-bold">Su Doc</span></label>
+            <div className="relative">
               <input 
                 ref={fileHioposRef}
                 type="file" 
                 accept=".xlsx,.xls"
                 onChange={(e) => handleFileChange(e, 'hiopos')}
-                className="hidden"
+                className="w-full bg-white border border-hiopos-line text-hiopos-muted rounded-lg p-2 text-sm cursor-pointer file:hidden"
                 id="hiopos-upload"
               />
-              <label 
-                htmlFor="hiopos-upload"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[#22304f] rounded-xl cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all group"
-              >
-                <Upload className="w-8 h-8 mb-2 text-[#9fb1d1] group-hover:text-emerald-400" />
-                <span className="text-sm text-[#9fb1d1] group-hover:text-emerald-400 font-medium">
-                  {hioposData ? "Cambiar archivo" : "Seleccionar HIOPOS.xlsx"}
-                </span>
-              </label>
             </div>
           </motion.div>
         </div>
 
         {/* Actions & Stats */}
-        <div className="bg-[#111a2e] border border-[#22304f] rounded-2xl p-6 shadow-xl mb-8">
-          <div className="flex flex-wrap items-center gap-4 mb-8">
+        <div className="bg-hiopos-card border border-hiopos-line rounded-xl p-5 shadow-sm mb-6">
+          <div className="flex flex-wrap items-center gap-3 mb-6">
             <button 
               onClick={handleCompare}
               disabled={loading || !dianData || !hioposData}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
+              className="px-5 py-2.5 bg-hiopos-primary hover:bg-hiopos-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
             >
-              <ArrowRightLeft className="w-5 h-5" />
+              <ArrowRightLeft className="w-4 h-4" />
               Comparar Archivos
             </button>
             <button 
               onClick={handleDownload}
               disabled={results.length === 0}
-              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
+              className="px-5 py-2.5 bg-hiopos-card border border-hiopos-line hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-hiopos-txt font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
             >
-              <Download className="w-5 h-5" />
+              <Download className="w-4 h-4" />
               Descargar Excel
             </button>
             <button 
               onClick={handleClear}
-              className="px-6 py-3 bg-[#1d2c4f] hover:bg-[#2a3a63] text-[#eaf0ff] font-semibold rounded-xl transition-colors flex items-center gap-2"
+              className="px-5 py-2.5 bg-hiopos-card border border-hiopos-line hover:bg-gray-50 text-hiopos-txt font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
             >
-              <Trash2 className="w-5 h-5" />
+              <Trash2 className="w-4 h-4" />
               Limpiar
             </button>
             
@@ -447,9 +425,9 @@ export default function App() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0 }}
-                  className={`flex items-center gap-2 text-sm font-medium ${
-                    message.type === 'error' ? 'text-rose-400' : 
-                    message.type === 'success' ? 'text-emerald-400' : 'text-blue-400'
+                  className={`flex items-center gap-2 text-xs font-bold ${
+                    message.type === 'error' ? 'text-hiopos-bad' : 
+                    message.type === 'success' ? 'text-hiopos-ok' : 'text-hiopos-primary'
                   }`}
                 >
                   {message.type === 'error' ? <AlertCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -459,39 +437,39 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard 
               label="Facturas DIAN" 
               value={stats.dianCount.toLocaleString()} 
-              icon={<FileText className="w-5 h-5 text-blue-400" />}
+              icon={<FileText className="w-4 h-4 text-hiopos-primary" />}
             />
             <StatCard 
               label="Facturas HIOPOS" 
               value={stats.hioposCount.toLocaleString()} 
-              icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
+              icon={<TrendingUp className="w-4 h-4 text-hiopos-ok" />}
             />
             <StatCard 
               label="Pendientes" 
               value={stats.pendingCount.toLocaleString()} 
-              icon={<Clock className="w-5 h-5 text-amber-400" />}
+              icon={<Clock className="w-4 h-4 text-amber-500" />}
               highlight={stats.pendingCount > 0}
             />
             <StatCard 
               label="Valor Pendiente" 
               value={formatCurrency(stats.pendingValue)} 
-              icon={<DollarSign className="w-5 h-5 text-rose-400" />}
+              icon={<DollarSign className="w-4 h-4 text-hiopos-bad" />}
               highlight={stats.pendingValue > 0}
             />
             <StatCard 
               label="Diferencias" 
               value={stats.diffCount.toLocaleString()} 
-              icon={<ArrowRightLeft className="w-5 h-5 text-purple-400" />}
+              icon={<ArrowRightLeft className="w-4 h-4 text-purple-500" />}
               highlight={stats.diffCount > 0}
             />
             <StatCard 
               label="Duplicados" 
               value={stats.duplicateCount.toLocaleString()} 
-              icon={<FileSpreadsheet className="w-5 h-5 text-orange-400" />}
+              icon={<FileSpreadsheet className="w-4 h-4 text-orange-500" />}
               highlight={stats.duplicateCount > 0}
             />
           </div>
@@ -499,8 +477,8 @@ export default function App() {
 
         {/* Tabs & Search */}
         {results.length > 0 && (
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
               <TabButton 
                 active={activeTab === 'general'} 
                 onClick={() => setActiveTab('general')}
@@ -510,34 +488,34 @@ export default function App() {
               <TabButton 
                 active={activeTab === 'diferencias'} 
                 onClick={() => setActiveTab('diferencias')}
-                label="Diferencias de Valor"
+                label="Diferencias"
                 count={filteredDifferences.length}
-                color="text-purple-400"
+                color="text-purple-600"
               />
               <TabButton 
                 active={activeTab === 'duplicados'} 
                 onClick={() => setActiveTab('duplicados')}
-                label="Duplicados HIOPOS"
+                label="Duplicados"
                 count={filteredDuplicates.length}
-                color="text-orange-400"
+                color="text-orange-600"
               />
             </div>
 
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9fb1d1]" />
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hiopos-muted" />
               <input 
                 type="text"
                 placeholder="Buscar factura o proveedor..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#0d162a] border border-[#22304f] rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
+                className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-9 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm"
               />
               {searchQuery && (
                 <button 
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#22304f] rounded-md transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
                 >
-                  <X className="w-3 h-3 text-[#9fb1d1]" />
+                  <X className="w-3 h-3 text-hiopos-muted" />
                 </button>
               )}
             </div>
@@ -549,40 +527,40 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="bg-[#111a2e] border border-[#22304f] rounded-2xl overflow-hidden shadow-xl"
+            className="bg-white border border-hiopos-line rounded-xl overflow-hidden shadow-sm"
           >
             <div className="overflow-x-auto">
               {activeTab === 'general' && (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#0d162a] border-bottom border-[#22304f]">
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Factura</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Proveedor (DIAN)</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Proveedor (HIOPOS)</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Fecha Emisión</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Total (DIAN)</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">En HIOPOS</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Estado</th>
+                    <tr className="bg-hiopos-header border-b border-hiopos-line">
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider text-center">HIOPOS</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Estado</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#22304f]">
+                  <tbody className="divide-y divide-hiopos-line">
                     {filteredResults.map((r, i) => (
-                      <tr key={i} className="hover:bg-blue-500/5 transition-colors">
-                        <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
-                        <td className="px-6 py-4 text-sm text-[#9fb1d1] truncate max-w-[200px]" title={r.PROVEEDOR_DIAN}>{r.PROVEEDOR_DIAN}</td>
-                        <td className="px-6 py-4 text-sm text-[#9fb1d1] truncate max-w-[200px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
-                        <td className="px-6 py-4 text-sm text-[#9fb1d1]">{r.FECHA_DIAN}</td>
-                        <td className="px-6 py-4 text-sm font-medium">{formatCurrency(r.TOTAL_DIAN)}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            r.EXISTE_EN_HIOPOS === 'SI' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.PROVEEDOR_DIAN}>{r.PROVEEDOR_DIAN}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_DIAN}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            r.EXISTE_EN_HIOPOS === 'SI' ? 'bg-emerald-50 border-emerald-200 text-hiopos-ok' : 'bg-rose-50 border-rose-200 text-hiopos-bad'
                           }`}>
                             {r.EXISTE_EN_HIOPOS}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`text-sm font-semibold ${
-                            r.ESTADO === 'OK' ? 'text-emerald-400' : 'text-rose-400'
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-bold ${
+                            r.ESTADO === 'OK' ? 'text-hiopos-ok' : 'text-hiopos-bad'
                           }`}>
                             {r.ESTADO}
                           </span>
@@ -591,7 +569,7 @@ export default function App() {
                     ))}
                     {filteredResults.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron resultados para tu búsqueda.</td>
+                        <td colSpan={7} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron resultados para tu búsqueda.</td>
                       </tr>
                     )}
                   </tbody>
@@ -601,27 +579,27 @@ export default function App() {
               {activeTab === 'diferencias' && (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#0d162a] border-bottom border-[#22304f]">
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Factura</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Proveedor</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Total DIAN</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Total HIOPOS</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Diferencia</th>
+                    <tr className="bg-hiopos-header border-b border-hiopos-line">
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total DIAN</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total HIOPOS</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Diferencia</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#22304f]">
+                  <tbody className="divide-y divide-hiopos-line">
                     {filteredDifferences.map((r, i) => (
-                      <tr key={i} className="hover:bg-purple-500/5 transition-colors">
-                        <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
-                        <td className="px-6 py-4 text-sm text-[#9fb1d1]">{r.PROVEEDOR_DIAN}</td>
-                        <td className="px-6 py-4 text-sm font-medium">{formatCurrency(r.TOTAL_DIAN)}</td>
-                        <td className="px-6 py-4 text-sm font-medium">{formatCurrency(r.TOTAL_HIOPOS)}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-rose-400">{formatCurrency(r.DIFERENCIA)}</td>
+                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR_DIAN}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{formatCurrency(r.DIFERENCIA)}</td>
                       </tr>
                     ))}
                     {filteredDifferences.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron diferencias de valor.</td>
+                        <td colSpan={5} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron diferencias de valor.</td>
                       </tr>
                     )}
                   </tbody>
@@ -631,23 +609,23 @@ export default function App() {
               {activeTab === 'duplicados' && (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#0d162a] border-bottom border-[#22304f]">
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Factura</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Proveedor</th>
-                      <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#9fb1d1]">Repeticiones</th>
+                    <tr className="bg-hiopos-header border-b border-hiopos-line">
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Repeticiones</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#22304f]">
+                  <tbody className="divide-y divide-hiopos-line">
                     {filteredDuplicates.map((r, i) => (
-                      <tr key={i} className="hover:bg-orange-500/5 transition-colors">
-                        <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
-                        <td className="px-6 py-4 text-sm text-[#9fb1d1]">{r.PROVEEDOR}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-orange-400">{r.VECES} veces</td>
+                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-orange-600">{r.VECES} veces</td>
                       </tr>
                     ))}
                     {filteredDuplicates.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron facturas duplicadas.</td>
+                        <td colSpan={3} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas duplicadas.</td>
                       </tr>
                     )}
                   </tbody>
@@ -658,10 +636,10 @@ export default function App() {
         )}
 
         {/* Footer */}
-        <footer className="mt-12 pt-8 border-t border-[#22304f] text-center">
-          <p className="text-sm text-[#9fb1d1] leading-relaxed max-w-2xl mx-auto">
-            Tip: Si tus archivos Excel tienen varias hojas, la aplicación tomará la <span className="text-white font-medium">primera hoja</span>. 
-            El cruce se realiza comparando el número de factura (<span className="text-white font-medium italic">FACTURA</span> en DIAN vs <span className="text-white font-medium italic">Su Doc</span> en HIOPOS).
+        <footer className="mt-10 pt-6 border-t border-hiopos-line text-center">
+          <p className="text-xs text-hiopos-muted leading-relaxed max-w-2xl mx-auto">
+            Tip: Si tus archivos Excel tienen varias hojas, la aplicación tomará la <span className="text-hiopos-txt font-bold">primera hoja</span>. 
+            El cruce se realiza comparando el número de factura (<span className="text-hiopos-txt font-bold italic">FACTURA</span> en DIAN vs <span className="text-hiopos-txt font-bold italic">Su Doc</span> en HIOPOS).
           </p>
         </footer>
       </div>
@@ -671,34 +649,32 @@ export default function App() {
 
 function StatCard({ label, value, icon, highlight = false }: { label: string; value: string; icon: React.ReactNode; highlight?: boolean }) {
   return (
-    <div className={`p-5 rounded-xl border transition-all ${
-      highlight ? 'bg-rose-500/5 border-rose-500/20' : 'bg-[#0d162a] border-[#22304f]'
-    }`}>
-      <div className="flex items-center gap-3 mb-3">
-        <div className="p-2 bg-[#111a2e] rounded-lg border border-[#22304f]">
+    <div className={`p-3 rounded-lg border transition-all bg-hiopos-card border-hiopos-line shadow-sm`}>
+      <div className="flex items-center gap-2 mb-1">
+        <div className="p-1.5 bg-hiopos-bg rounded-md border border-hiopos-line">
           {icon}
         </div>
-        <span className="text-xs font-bold uppercase tracking-widest text-[#9fb1d1]">{label}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-hiopos-muted">{label}</span>
       </div>
-      <div className={`text-xl font-bold truncate ${highlight ? 'text-rose-400' : 'text-white'}`}>
+      <div className={`text-base font-bold truncate ${highlight ? 'text-hiopos-bad' : 'text-hiopos-txt'}`}>
         {value}
       </div>
     </div>
   );
 }
 
-function TabButton({ active, onClick, label, count, color = "text-blue-400" }: { active: boolean; onClick: () => void; label: string; count: number; color?: string }) {
+function TabButton({ active, onClick, label, count, color = "text-hiopos-primary" }: { active: boolean; onClick: () => void; label: string; count: number; color?: string }) {
   return (
     <button 
       onClick={onClick}
-      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap border ${
+      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border shadow-sm ${
         active 
-          ? `bg-blue-600/10 border-blue-600/50 text-white` 
-          : `bg-[#0d162a] border-[#22304f] text-[#9fb1d1] hover:border-blue-500/30`
+          ? `bg-hiopos-header border-hiopos-primary text-hiopos-primary-dark` 
+          : `bg-white border-hiopos-line text-hiopos-muted hover:bg-gray-50`
       }`}
     >
       {label}
-      <span className={`px-1.5 py-0.5 rounded-md bg-[#111a2e] text-[10px] border border-[#22304f] ${active ? 'text-white' : color}`}>
+      <span className={`px-1.5 py-0.5 rounded-md bg-hiopos-bg text-[9px] border border-hiopos-line ${active ? 'text-hiopos-primary-dark' : color}`}>
         {count}
       </span>
     </button>
