@@ -36,8 +36,9 @@ interface ComparisonResult {
 
 interface DuplicateResult {
   FACTURA: string;
-  PROVEEDOR: string;
-  VECES: number;
+  REPETICIONES: number;
+  PROVEEDOR_HIOPOS: string;
+  FILAS_HIOPOS: string;
 }
 
 interface Stats {
@@ -160,20 +161,35 @@ export default function App() {
       }
 
       // Detect duplicates in HIOPOS
-      const hioposCounts = new Map<string, { count: number; provider: string }>();
-      hioposData.forEach(r => {
+      const countsHiopos = new Map<string, number>();        // factura -> cantidad
+      const rowsByFactura = new Map<string, any[]>();       // factura -> filas (para detalle)
+
+      hioposData.forEach((r, idx) => {
         const fac = normalizeFactura(r[hioposFacturaCol]);
         if (!fac) return;
-        const current = hioposCounts.get(fac) || { count: 0, provider: String(r[hioposProveedorCol] || "") };
-        hioposCounts.set(fac, { count: current.count + 1, provider: current.provider });
+
+        countsHiopos.set(fac, (countsHiopos.get(fac) || 0) + 1);
+
+        if (!rowsByFactura.has(fac)) rowsByFactura.set(fac, []);
+        rowsByFactura.get(fac)!.push({ ...r, __row: idx + 2 }); // +2 por encabezados en Excel
       });
 
       const duplicateList: DuplicateResult[] = [];
-      hioposCounts.forEach((val, key) => {
-        if (val.count > 1) {
-          duplicateList.push({ FACTURA: key, PROVEEDOR: val.provider, VECES: val.count });
+      countsHiopos.forEach((count, fac) => {
+        if (count > 1) {
+          const filas = rowsByFactura.get(fac) || [];
+          const proveedor = hioposProveedorCol ? String(filas[0][hioposProveedorCol] || "").trim() : "";
+          duplicateList.push({
+            FACTURA: fac,
+            REPETICIONES: count,
+            PROVEEDOR_HIOPOS: proveedor,
+            FILAS_HIOPOS: filas.map(f => f.__row).join(", ")
+          });
         }
       });
+
+      // Orden opcional: más repetidas primero
+      duplicateList.sort((a, b) => b.REPETICIONES - a.REPETICIONES);
       setDuplicates(duplicateList);
 
       const setH = new Set(hioposData.map(r => normalizeFactura(r[hioposFacturaCol])).filter(Boolean));
@@ -323,7 +339,7 @@ export default function App() {
 
   const filteredDuplicates = duplicates.filter(r => 
     r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.PROVEEDOR.toLowerCase().includes(searchQuery.toLowerCase())
+    r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -610,22 +626,24 @@ export default function App() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-hiopos-header border-b border-hiopos-line">
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura (Su Doc)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Repeticiones</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Filas en HIOPOS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-hiopos-line">
                     {filteredDuplicates.map((r, i) => (
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
                         <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR}</td>
-                        <td className="px-4 py-3 text-xs font-bold text-orange-600">{r.VECES} veces</td>
+                        <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{r.REPETICIONES}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FILAS_HIOPOS}</td>
                       </tr>
                     ))}
                     {filteredDuplicates.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas duplicadas.</td>
+                        <td colSpan={4} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas duplicadas.</td>
                       </tr>
                     )}
                   </tbody>
