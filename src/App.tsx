@@ -280,24 +280,34 @@ export default function App() {
     
     const wb = XLSX.utils.book_new();
     
-    // Sheet 1: All Results
+    // 1) Sheet: PENDIENTES (Actionable data first, with "lite" columns)
+    const pending = results.filter(r => r.ESTADO === "PENDIENTE POR INGRESAR");
+    if (pending.length > 0) {
+      const pendingLite = pending.map(r => ({
+        FACTURA: r.FACTURA,
+        PROVEEDOR_DIAN: r.PROVEEDOR_DIAN,
+        PROVEEDOR_HIOPOS: r.PROVEEDOR_HIOPOS,
+        FECHA_DIAN: r.FECHA_DIAN,
+        TOTAL_DIAN: r.TOTAL_DIAN,
+        ESTADO: r.ESTADO
+      }));
+      const wsPending = XLSX.utils.json_to_sheet(pendingLite);
+      XLSX.utils.book_append_sheet(wb, wsPending, "PENDIENTES");
+    } else {
+      setMessage({ text: "✅ No hay facturas pendientes para descargar.", type: 'success' });
+    }
+    
+    // 2) Sheet: RESULTADO COMPLETO
     const wsFull = XLSX.utils.json_to_sheet(results);
     XLSX.utils.book_append_sheet(wb, wsFull, "RESULTADO COMPLETO");
     
-    // Sheet 2: Pending
-    const pending = results.filter(r => r.ESTADO === "PENDIENTE POR INGRESAR");
-    if (pending.length > 0) {
-      const wsPending = XLSX.utils.json_to_sheet(pending);
-      XLSX.utils.book_append_sheet(wb, wsPending, "PENDIENTES");
-    }
-    
-    // Sheet 3: Differences
+    // 3) Sheet: DIFERENCIAS DE VALOR
     if (differences.length > 0) {
       const wsDiff = XLSX.utils.json_to_sheet(differences);
       XLSX.utils.book_append_sheet(wb, wsDiff, "DIFERENCIAS DE VALOR");
     }
     
-    // Sheet 4: Duplicates
+    // 4) Sheet: DUPLICADOS HIOPOS
     if (duplicates.length > 0) {
       const wsDup = XLSX.utils.json_to_sheet(duplicates);
       XLSX.utils.book_append_sheet(wb, wsDup, "DUPLICADOS HIOPOS");
