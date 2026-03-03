@@ -16,7 +16,9 @@ import {
   FileText,
   TrendingUp,
   Clock,
-  DollarSign
+  DollarSign,
+  Search,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -54,6 +56,7 @@ export default function App() {
   const [duplicates, setDuplicates] = useState<DuplicateResult[]>([]);
   const [differences, setDifferences] = useState<ComparisonResult[]>([]);
   const [activeTab, setActiveTab] = useState<'general' | 'diferencias' | 'duplicados'>('general');
+  const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState<Stats>({ 
     dianCount: 0, 
     hioposCount: 0, 
@@ -293,6 +296,7 @@ export default function App() {
     setResults([]);
     setDuplicates([]);
     setDifferences([]);
+    setSearchQuery('');
     setStats({ 
       dianCount: 0, 
       hioposCount: 0, 
@@ -305,6 +309,22 @@ export default function App() {
     if (fileDianRef.current) fileDianRef.current.value = "";
     if (fileHioposRef.current) fileHioposRef.current.value = "";
   };
+
+  const filteredResults = results.filter(r => 
+    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    r.PROVEEDOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredDifferences = differences.filter(r => 
+    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    r.PROVEEDOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredDuplicates = duplicates.filter(r => 
+    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    r.PROVEEDOR.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-[#0b1220] text-[#eaf0ff] font-sans selection:bg-blue-500/30">
@@ -477,29 +497,50 @@ export default function App() {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs & Search */}
         {results.length > 0 && (
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-            <TabButton 
-              active={activeTab === 'general'} 
-              onClick={() => setActiveTab('general')}
-              label="General"
-              count={results.length}
-            />
-            <TabButton 
-              active={activeTab === 'diferencias'} 
-              onClick={() => setActiveTab('diferencias')}
-              label="Diferencias de Valor"
-              count={differences.length}
-              color="text-purple-400"
-            />
-            <TabButton 
-              active={activeTab === 'duplicados'} 
-              onClick={() => setActiveTab('duplicados')}
-              label="Duplicados HIOPOS"
-              count={duplicates.length}
-              color="text-orange-400"
-            />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+              <TabButton 
+                active={activeTab === 'general'} 
+                onClick={() => setActiveTab('general')}
+                label="General"
+                count={filteredResults.length}
+              />
+              <TabButton 
+                active={activeTab === 'diferencias'} 
+                onClick={() => setActiveTab('diferencias')}
+                label="Diferencias de Valor"
+                count={filteredDifferences.length}
+                color="text-purple-400"
+              />
+              <TabButton 
+                active={activeTab === 'duplicados'} 
+                onClick={() => setActiveTab('duplicados')}
+                label="Duplicados HIOPOS"
+                count={filteredDuplicates.length}
+                color="text-orange-400"
+              />
+            </div>
+
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9fb1d1]" />
+              <input 
+                type="text"
+                placeholder="Buscar factura o proveedor..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#0d162a] border border-[#22304f] rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#22304f] rounded-md transition-colors"
+                >
+                  <X className="w-3 h-3 text-[#9fb1d1]" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -525,7 +566,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#22304f]">
-                    {results.map((r, i) => (
+                    {filteredResults.map((r, i) => (
                       <tr key={i} className="hover:bg-blue-500/5 transition-colors">
                         <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
                         <td className="px-6 py-4 text-sm text-[#9fb1d1] truncate max-w-[200px]" title={r.PROVEEDOR_DIAN}>{r.PROVEEDOR_DIAN}</td>
@@ -548,6 +589,11 @@ export default function App() {
                         </td>
                       </tr>
                     ))}
+                    {filteredResults.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron resultados para tu búsqueda.</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               )}
@@ -564,7 +610,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#22304f]">
-                    {differences.map((r, i) => (
+                    {filteredDifferences.map((r, i) => (
                       <tr key={i} className="hover:bg-purple-500/5 transition-colors">
                         <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
                         <td className="px-6 py-4 text-sm text-[#9fb1d1]">{r.PROVEEDOR_DIAN}</td>
@@ -573,7 +619,7 @@ export default function App() {
                         <td className="px-6 py-4 text-sm font-bold text-rose-400">{formatCurrency(r.DIFERENCIA)}</td>
                       </tr>
                     ))}
-                    {differences.length === 0 && (
+                    {filteredDifferences.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron diferencias de valor.</td>
                       </tr>
@@ -592,14 +638,14 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#22304f]">
-                    {duplicates.map((r, i) => (
+                    {filteredDuplicates.map((r, i) => (
                       <tr key={i} className="hover:bg-orange-500/5 transition-colors">
                         <td className="px-6 py-4 font-mono text-sm">{r.FACTURA}</td>
                         <td className="px-6 py-4 text-sm text-[#9fb1d1]">{r.PROVEEDOR}</td>
                         <td className="px-6 py-4 text-sm font-bold text-orange-400">{r.VECES} veces</td>
                       </tr>
                     ))}
-                    {duplicates.length === 0 && (
+                    {filteredDuplicates.length === 0 && (
                       <tr>
                         <td colSpan={3} className="px-6 py-10 text-center text-[#9fb1d1]">No se encontraron facturas duplicadas.</td>
                       </tr>
