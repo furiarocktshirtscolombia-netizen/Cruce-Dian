@@ -1,0 +1,5 @@
+{
+  "name": "Cruce DIAN vs HIOPOS",
+  "description": "Herramienta contable para comparar facturas de la DIAN contra el sistema HIOPOS, identificar pendientes y descargar reportes.",
+  "requestFramePermissions": []
+}
