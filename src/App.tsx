@@ -24,7 +24,8 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface ComparisonResult {
   FACTURA: string;
-  PROVEEDOR_DIAN: string;
+  EMISOR_DIAN: string;
+  RECEPTOR_DIAN: string;
   PROVEEDOR_HIOPOS: string;
   FECHA_DIAN: string;
   TOTAL_DIAN: number;
@@ -72,9 +73,40 @@ export default function App() {
   const fileDianRef = useRef<HTMLInputElement>(null);
   const fileHioposRef = useRef<HTMLInputElement>(null);
 
+  const normHeader = (s: any) => {
+    return String(s || "")
+      .replace(/\u00A0/g, " ") // NBSP
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // sin tildes
+      .replace(/\s+/g, " ")
+      .trim()
+      .toUpperCase();
+  };
+
   const normalizeFactura = (v: any) => {
     if (v === null || v === undefined) return "";
-    return String(v).trim().toUpperCase();
+    let s = (typeof v === "number") ? String(Math.trunc(v)) : String(v);
+    s = s.trim().toUpperCase();
+    // deja solo A-Z 0-9
+    s = s.replace(/[^A-Z0-9]/g, "");
+    return s;
+  };
+
+  const parseMoney = (v: any) => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === "number") return v;
+
+    let s = String(v).trim();
+    if (!s) return 0;
+
+    s = s.replace(/[^\d,.-]/g, "");  // quita $ y letras
+    // Caso Colombia: miles con punto, decimales con coma (a veces)
+    // quitamos puntos de miles
+    s = s.replace(/\./g, "");
+    // convertimos coma decimal a punto
+    s = s.replace(/,/g, ".");
+
+    const n = Number(s);
+    return isNaN(n) ? 0 : n;
   };
 
   const formatCurrency = (n: number) => {
@@ -85,36 +117,59 @@ export default function App() {
     }).format(n);
   };
 
-  const findCol = (obj: any, options: string[]) => {
-    const keys = Object.keys(obj || {});
-    const map = keys.reduce((acc: any, k) => {
-      acc[k.toLowerCase()] = k;
-      return acc;
-    }, {});
-    for (const opt of options) {
-      const hit = map[opt.toLowerCase()];
-      if (hit) return hit;
+  const findHeaderRow = (matrix: any[][], requiredHeaders: string[]) => {
+    const req = requiredHeaders.map(normHeader);
+    for (let i = 0; i < Math.min(matrix.length, 40); i++){
+      const row = (matrix[i] || []).map(normHeader);
+      const ok = req.every(h => row.includes(h));
+      if (ok) return i;
     }
-    return null;
+    return 0;
   };
 
-  const readExcel = (file: File): Promise<any[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const wb = XLSX.read(data, { type: "array" });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
-          resolve(json);
-        } catch (err) {
-          reject(err);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
+  const readExcelSmart = async (file: File, type: 'DIAN' | 'HIOPOS'): Promise<any[]> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const data = new Uint8Array(arrayBuffer);
+    const wb = XLSX.read(data, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+
+    // 1) Leemos como matriz para detectar fila real de encabezados
+    const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
+
+    const required = (type === "DIAN")
+      ? ["Factura", "Total"]
+      : ["Su Doc", "Neto"];
+
+    const headerRowIndex = findHeaderRow(matrix, required);
+    const rawHeaders = (matrix[headerRowIndex] || []).map(h => String(h || "").trim());
+    const headersNorm = rawHeaders.map(normHeader);
+
+    // 2) Construimos objetos desde la fila siguiente al header
+    const rows = [];
+    for (let r = headerRowIndex + 1; r < matrix.length; r++){
+      const arr = matrix[r] || [];
+      // saltar filas totalmente vacías
+      if (arr.every(v => String(v || "").trim() === "")) continue;
+
+      const obj: any = {};
+      for (let c = 0; c < rawHeaders.length; c++){
+        const key = headersNorm[c] || `COL_${c}`;
+        obj[key] = arr[c];
+      }
+      rows.push(obj);
+    }
+
+    return rows;
+  };
+
+  const pickCol = (sampleRow: any, options: string[]) => {
+    const keys = Object.keys(sampleRow || {}); // ya normalizados
+    const set = new Set(keys);
+    for (const opt of options){
+      const k = normHeader(opt);
+      if (set.has(k)) return k;
+    }
+    return null;
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'dian' | 'hiopos') => {
@@ -123,7 +178,7 @@ export default function App() {
 
     setLoading(true);
     try {
-      const data = await readExcel(file);
+      const data = await readExcelSmart(file, type === 'dian' ? 'DIAN' : 'HIOPOS');
       if (type === 'dian') setDianData(data);
       else setHioposData(data);
       setMessage({ text: `Archivo ${type.toUpperCase()} cargado con éxito.`, type: 'success' });
@@ -134,7 +189,7 @@ export default function App() {
     }
   };
 
-  const handleCompare = () => {
+  const handleCompare = async () => {
     if (!dianData || !hioposData) {
       setMessage({ text: "⚠️ Sube ambos archivos (DIAN y HIOPOS) para comparar.", type: 'error' });
       return;
@@ -142,131 +197,127 @@ export default function App() {
 
     setLoading(true);
     try {
-      const dianFacturaCol = findCol(dianData[0], ["FACTURA", "Factura", "No Factura", "Número Factura", "Prefijo y Número"]);
-      const dianTotalCol = findCol(dianData[0], ["Total", "TOTAL", "Neto", "NETO", "Valor Total"]);
-      const dianFechaCol = findCol(dianData[0], ["Fecha Emisión", "Fecha Emision", "Fecha", "FECHA", "Fecha de Emisión"]);
-      const dianProveedorCol = findCol(dianData[0], ["Nombre Emisor", "Proveedor", "Razón Social", "Razon Social", "Emisor"]);
+      const dian = dianData;
+      const hiopos = hioposData;
 
-      const hioposFacturaCol = findCol(hioposData[0], ["Su Doc", "SU DOC", "Factura", "FACTURA", "Documento", "Referencia"]);
-      const hioposProveedorCol = findCol(hioposData[0], ["Contacto", "Proveedor", "Tercero", "Nombre"]);
-      const hioposTotalCol = findCol(hioposData[0], ["Neto", "NETO", "Total", "TOTAL", "Valor"]);
+      // ====== COLUMNAS (FORMATO REAL) ======
+      const cD_FACT = pickCol(dian[0], ["Factura", "FACTURA"]);
+      const cD_EMISOR = pickCol(dian[0], ["Nombre Emisor", "Emisor"]);
+      const cD_RECEPTOR = pickCol(dian[0], ["Nombre Receptor", "Receptor", "Nombre receptor"]);
+      const cD_FEC  = pickCol(dian[0], ["Fecha Emisión", "Fecha Emision", "Fecha"]);
+      const cD_TOT  = pickCol(dian[0], ["Total", "TOTAL"]);
 
-      if (!dianFacturaCol) {
-        setMessage({ text: "❌ No se encontró la columna de FACTURA en el archivo DIAN.", type: 'error' });
-        return;
+      const cH_FACT = pickCol(hiopos[0], ["Su Doc", "SUDOC", "SU DOC"]);
+      const cH_PROV = pickCol(hiopos[0], ["Contacto", "PROVEEDOR"]);
+      const cH_NETO = pickCol(hiopos[0], ["Neto"]);
+      const cH_PEND = pickCol(hiopos[0], ["Pendiente"]);
+
+      if(!cD_FACT){ 
+        setMessage({ text: "❌ No encuentro columna 'Factura' en DIAN.", type: 'error' });
+        setLoading(false);
+        return; 
       }
-      if (!hioposFacturaCol) {
-        setMessage({ text: "❌ No se encontró la columna de Su Doc (o equivalente) en el archivo HIOPOS.", type: 'error' });
-        return;
+      if(!cH_FACT){ 
+        setMessage({ text: "❌ No encuentro columna 'Su Doc' en HIOPOS.", type: 'error' });
+        setLoading(false);
+        return; 
       }
 
-      // Detect duplicates in HIOPOS
-      const countsHiopos = new Map<string, number>();        // factura -> cantidad
-      const rowsByFactura = new Map<string, any[]>();       // factura -> filas (para detalle)
+      // ====== MAPA HIOPOS (factura -> datos) ======
+      const hiMap = new Map<string, { proveedor: string; neto: number; pendiente: number; rows: number[] }>();
+      const hiCount = new Map<string, number>();
 
-      hioposData.forEach((r, idx) => {
-        const fac = normalizeFactura(r[hioposFacturaCol]);
-        if (!fac) return;
+      hiopos.forEach((r, idx) => {
+        const fac = normalizeFactura(r[cH_FACT]);
+        if(!fac) return;
 
-        countsHiopos.set(fac, (countsHiopos.get(fac) || 0) + 1);
+        hiCount.set(fac, (hiCount.get(fac) || 0) + 1);
 
-        if (!rowsByFactura.has(fac)) rowsByFactura.set(fac, []);
-        rowsByFactura.get(fac)!.push({ ...r, __row: idx + 2 }); // +2 por encabezados en Excel
+        if(!hiMap.has(fac)){
+          hiMap.set(fac, {
+            proveedor: cH_PROV ? String(r[cH_PROV] || "").trim() : "",
+            neto: cH_NETO ? parseMoney(r[cH_NETO]) : 0,
+            pendiente: cH_PEND ? parseMoney(r[cH_PEND]) : 0,
+            rows: [idx + 2]
+          });
+        } else {
+          hiMap.get(fac)!.rows.push(idx + 2);
+        }
       });
 
+      const hiSet = new Set([...hiMap.keys()]);
+
+      // ====== DUPLICADOS ======
       const duplicateList: DuplicateResult[] = [];
-      countsHiopos.forEach((count, fac) => {
-        if (count > 1) {
-          const filas = rowsByFactura.get(fac) || [];
-          const proveedor = hioposProveedorCol ? String(filas[0][hioposProveedorCol] || "").trim() : "";
+      hiCount.forEach((count, fac) => {
+        if(count > 1){
+          const base = hiMap.get(fac) || { proveedor: "", rows: [] };
           duplicateList.push({
             FACTURA: fac,
             REPETICIONES: count,
-            PROVEEDOR_HIOPOS: proveedor,
-            FILAS_HIOPOS: filas.map(f => f.__row).join(", ")
+            PROVEEDOR_HIOPOS: base.proveedor || "",
+            FILAS_HIOPOS: base.rows.join(", ")
           });
         }
       });
-
-      // Orden opcional: más repetidas primero
-      duplicateList.sort((a, b) => b.REPETICIONES - a.REPETICIONES);
       setDuplicates(duplicateList);
 
-      const setH = new Set(hioposData.map(r => normalizeFactura(r[hioposFacturaCol])).filter(Boolean));
-
-      const mapHiopos = new Map<string, { provider: string; total: number }>();
-      hioposData.forEach(r => {
-        const fac = normalizeFactura(r[hioposFacturaCol]);
-        if (!fac) return;
-        
-        let total = 0;
-        if (hioposTotalCol) {
-          const val = r[hioposTotalCol];
-          if (typeof val === 'number') total = val;
-          else total = Number(String(val).replace(/\./g, "").replace(",", "."));
-        }
-
-        const prov = hioposProveedorCol ? String(r[hioposProveedorCol] || "").trim() : "";
-        if (!mapHiopos.has(fac)) mapHiopos.set(fac, { provider: prov, total });
-      });
-
+      // ====== CRUCE DIAN vs HIOPOS ======
       let pendingCount = 0;
       let pendingValue = 0;
       let diffCount = 0;
 
-      const out: ComparisonResult[] = dianData.map(r => {
-        const fac = normalizeFactura(r[dianFacturaCol]);
-        const hioposEntry = mapHiopos.get(fac);
-        const existe = !!hioposEntry;
-        const estado = existe ? "OK" : "PENDIENTE POR INGRESAR";
+      const out: ComparisonResult[] = dian.map(r => {
+        const fac = normalizeFactura(r[cD_FACT]);
+        if(!fac) return null;
+
+        const emisorD = cD_EMISOR ? String(r[cD_EMISOR] || "").trim() : "";
+        const receptorD = cD_RECEPTOR ? String(r[cD_RECEPTOR] || "").trim() : "";
+        const fecha = cD_FEC ? String(r[cD_FEC]) : "";
+        const totalDian = cD_TOT ? parseMoney(r[cD_TOT]) : 0;
+
+        const existe = hiSet.has(fac);
+        const hiInfo = existe ? (hiMap.get(fac) || { proveedor: "", neto: 0 }) : { proveedor: "", neto: 0 };
         
-        let totalDian = 0;
-        if (dianTotalCol) {
-          const val = r[dianTotalCol];
-          if (typeof val === 'number') totalDian = val;
-          else totalDian = Number(String(val).replace(/\./g, "").replace(",", "."));
-        }
-
-        const totalHiopos = hioposEntry?.total || 0;
+        const provHi = hiInfo.proveedor || "";
+        const totalHiopos = hiInfo.neto || 0;
         const diferencia = existe ? Math.abs(totalDian - totalHiopos) : 0;
+        const estado = existe ? "OK" : "PENDIENTE POR INGRESAR";
 
-        const fecha = dianFechaCol ? String(r[dianFechaCol]) : "";
-        const provDian = dianProveedorCol ? String(r[dianProveedorCol] || "").trim() : "";
-        const provHiopos = hioposEntry?.provider || "";
-
-        if (!existe) {
+        if(!existe){
           pendingCount++;
-          pendingValue += (isNaN(totalDian) ? 0 : totalDian);
+          pendingValue += totalDian;
         }
 
-        if (existe && diferencia > 1) { // Tolerance of 1 unit for rounding
+        if (existe && diferencia > 1) {
           diffCount++;
         }
 
-        return { 
-          FACTURA: fac, 
-          PROVEEDOR_DIAN: provDian,
-          PROVEEDOR_HIOPOS: provHiopos,
-          FECHA_DIAN: fecha, 
-          TOTAL_DIAN: totalDian, 
+        return {
+          FACTURA: fac,
+          EMISOR_DIAN: emisorD,
+          RECEPTOR_DIAN: receptorD,
+          PROVEEDOR_HIOPOS: provHi,
+          FECHA_DIAN: fecha,
+          TOTAL_DIAN: totalDian,
           TOTAL_HIOPOS: totalHiopos,
           DIFERENCIA: diferencia,
-          EXISTE_EN_HIOPOS: existe ? "SI" : "NO", 
-          ESTADO: estado 
+          EXISTE_EN_HIOPOS: existe ? "SI" : "NO",
+          ESTADO: estado
         };
-      });
+      }).filter(Boolean) as ComparisonResult[];
 
       setResults(out);
       setDifferences(out.filter(r => r.EXISTE_EN_HIOPOS === 'SI' && r.DIFERENCIA > 1));
       setStats({
         dianCount: out.length,
-        hioposCount: setH.size,
+        hioposCount: hiSet.size,
         pendingCount,
         pendingValue,
         diffCount,
         duplicateCount: duplicateList.length
       });
-      setMessage({ text: "✅ Cruce completado con éxito.", type: 'success' });
+      setMessage({ text: "✅ Cruce completado correctamente.", type: 'success' });
     } catch (err) {
       console.error(err);
       setMessage({ text: "❌ Error procesando el cruce. Revisa el formato de los archivos.", type: 'error' });
@@ -278,42 +329,19 @@ export default function App() {
   const handleDownload = () => {
     if (results.length === 0) return;
     
-    const wb = XLSX.utils.book_new();
-    
-    // 1) Sheet: PENDIENTES (Actionable data first, with "lite" columns)
-    const pending = results.filter(r => r.ESTADO === "PENDIENTE POR INGRESAR");
-    if (pending.length > 0) {
-      const pendingLite = pending.map(r => ({
-        FACTURA: r.FACTURA,
-        PROVEEDOR_DIAN: r.PROVEEDOR_DIAN,
-        PROVEEDOR_HIOPOS: r.PROVEEDOR_HIOPOS,
-        FECHA_DIAN: r.FECHA_DIAN,
-        TOTAL_DIAN: r.TOTAL_DIAN,
-        ESTADO: r.ESTADO
-      }));
-      const wsPending = XLSX.utils.json_to_sheet(pendingLite);
-      XLSX.utils.book_append_sheet(wb, wsPending, "PENDIENTES");
-    } else {
-      setMessage({ text: "✅ No hay facturas pendientes para descargar.", type: 'success' });
-    }
-    
-    // 2) Sheet: RESULTADO COMPLETO
-    const wsFull = XLSX.utils.json_to_sheet(results);
-    XLSX.utils.book_append_sheet(wb, wsFull, "RESULTADO COMPLETO");
-    
-    // 3) Sheet: DIFERENCIAS DE VALOR
-    if (differences.length > 0) {
-      const wsDiff = XLSX.utils.json_to_sheet(differences);
-      XLSX.utils.book_append_sheet(wb, wsDiff, "DIFERENCIAS DE VALOR");
-    }
-    
-    // 4) Sheet: DUPLICADOS HIOPOS
-    if (duplicates.length > 0) {
-      const wsDup = XLSX.utils.json_to_sheet(duplicates);
-      XLSX.utils.book_append_sheet(wb, wsDup, "DUPLICADOS HIOPOS");
+    const pending = results.filter(r => 
+      String(r.ESTADO || "").toUpperCase().includes("PENDIENTE")
+    );
+
+    if (pending.length === 0) {
+      setMessage({ text: "✅ No hay pendientes para descargar.", type: 'success' });
+      return;
     }
 
-    XLSX.writeFile(wb, "Auditoria_DIAN_vs_HIOPOS.xlsx");
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(pending);
+    XLSX.utils.book_append_sheet(wb, ws, "PENDIENTES");
+    XLSX.writeFile(wb, "Pendientes_DIAN_vs_HIOPOS.xlsx");
   };
 
   const handleClear = () => {
@@ -338,13 +366,15 @@ export default function App() {
 
   const filteredResults = results.filter(r => 
     r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.PROVEEDOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.RECEPTOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
     r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredDifferences = differences.filter(r => 
     r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.PROVEEDOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase())
+    r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.RECEPTOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredDuplicates = duplicates.filter(r => 
@@ -561,7 +591,8 @@ export default function App() {
                   <thead>
                     <tr className="bg-hiopos-header border-b border-hiopos-line">
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Emisor (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Receptor (DIAN)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (DIAN)</th>
@@ -573,8 +604,9 @@ export default function App() {
                     {filteredResults.map((r, i) => (
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
                         <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.PROVEEDOR_DIAN}>{r.PROVEEDOR_DIAN}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.RECEPTOR_DIAN}>{r.RECEPTOR_DIAN}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
                         <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_DIAN}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
                         <td className="px-4 py-3 text-center">
@@ -595,7 +627,7 @@ export default function App() {
                     ))}
                     {filteredResults.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron resultados para tu búsqueda.</td>
+                        <td colSpan={8} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron resultados para tu búsqueda.</td>
                       </tr>
                     )}
                   </tbody>
@@ -617,7 +649,7 @@ export default function App() {
                     {filteredDifferences.map((r, i) => (
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
                         <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR_DIAN}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
                         <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{formatCurrency(r.DIFERENCIA)}</td>
