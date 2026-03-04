@@ -24,7 +24,9 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface ComparisonResult {
   FACTURA: string;
+  CUFE_CUDE: string;
   EMISOR_DIAN: string;
+  RECEPTOR_DIAN: string;
   PROVEEDOR_HIOPOS: string;
   FECHA_DIAN: string;
   TOTAL_DIAN: number;
@@ -203,7 +205,9 @@ export default function App() {
 
       // ====== COLUMNAS (FORMATO REAL) ======
       const cD_FACT = pickCol(dian[0], ["Factura", "FACTURA"]);
+      const cD_CUFE = pickCol(dian[0], ["CUFE/CUDE", "CUFE", "CUDE"]);
       const cD_EMISOR = pickCol(dian[0], ["Nombre Emisor", "Emisor"]);
+      const cD_RECEP = pickCol(dian[0], ["Nombre Receptor", "Receptor"]);
       const cD_FEC  = pickCol(dian[0], ["Fecha Emisión", "Fecha Emision", "Fecha"]);
       const cD_TOT  = pickCol(dian[0], ["Total", "TOTAL"]);
 
@@ -271,7 +275,9 @@ export default function App() {
         const fac = normalizeFactura(r[cD_FACT]);
         if(!fac) return null;
 
+        const cufe = cD_CUFE ? String(r[cD_CUFE] || "").trim() : "";
         const emisorD = cD_EMISOR ? String(r[cD_EMISOR] || "").trim() : "";
+        const receptorD = cD_RECEP ? String(r[cD_RECEP] || "").trim() : "";
         const fecha = cD_FEC ? String(r[cD_FEC]) : "";
         const totalDian = cD_TOT ? parseMoney(r[cD_TOT]) : 0;
 
@@ -295,7 +301,9 @@ export default function App() {
 
         return {
           FACTURA: fac,
+          CUFE_CUDE: cufe,
           EMISOR_DIAN: emisorD,
+          RECEPTOR_DIAN: receptorD,
           PROVEEDOR_HIOPOS: provHi,
           FECHA_DIAN: fecha,
           TOTAL_DIAN: totalDian,
@@ -329,9 +337,19 @@ export default function App() {
   const handleDownload = () => {
     if (results.length === 0) return;
     
-    const pending = results.filter(r => 
-      String(r.ESTADO || "").toUpperCase().includes("PENDIENTE")
-    );
+    const pending = results
+      .filter(r => String(r.ESTADO || "").toUpperCase().includes("PENDIENTE"))
+      .map(r => ({
+        FACTURA: r.FACTURA,
+        CUFE_CUDE: r.CUFE_CUDE,
+        EMISOR_DIAN: r.EMISOR_DIAN,
+        RECEPTOR_DIAN: r.RECEPTOR_DIAN,
+        PROVEEDOR_HIOPOS: r.PROVEEDOR_HIOPOS,
+        FECHA_DIAN: r.FECHA_DIAN,
+        TOTAL_DIAN: r.TOTAL_DIAN,
+        TOTAL_HIOPOS: r.TOTAL_HIOPOS,
+        ESTADO: r.ESTADO
+      }));
 
     if (pending.length === 0) {
       setMessage({ text: "✅ No hay pendientes para descargar.", type: 'success' });
