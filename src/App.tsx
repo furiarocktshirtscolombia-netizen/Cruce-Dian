@@ -25,12 +25,12 @@ import { motion, AnimatePresence } from 'motion/react';
 interface ComparisonResult {
   FACTURA: string;
   EMISOR_DIAN: string;
-  RECEPTOR_DIAN: string;
   PROVEEDOR_HIOPOS: string;
   FECHA_DIAN: string;
   TOTAL_DIAN: number;
   TOTAL_HIOPOS: number;
   DIFERENCIA: number;
+  DIF_VALOR: number;
   EXISTE_EN_HIOPOS: 'SI' | 'NO';
   ESTADO: string;
 }
@@ -59,6 +59,7 @@ export default function App() {
   const [differences, setDifferences] = useState<ComparisonResult[]>([]);
   const [activeTab, setActiveTab] = useState<'general' | 'diferencias' | 'duplicados'>('general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('TODOS');
   const [stats, setStats] = useState<Stats>({ 
     dianCount: 0, 
     hioposCount: 0, 
@@ -203,12 +204,11 @@ export default function App() {
       // ====== COLUMNAS (FORMATO REAL) ======
       const cD_FACT = pickCol(dian[0], ["Factura", "FACTURA"]);
       const cD_EMISOR = pickCol(dian[0], ["Nombre Emisor", "Emisor"]);
-      const cD_RECEPTOR = pickCol(dian[0], ["Nombre Receptor", "Receptor", "Nombre receptor"]);
       const cD_FEC  = pickCol(dian[0], ["Fecha Emisión", "Fecha Emision", "Fecha"]);
       const cD_TOT  = pickCol(dian[0], ["Total", "TOTAL"]);
 
-      const cH_FACT = pickCol(hiopos[0], ["Su Doc", "SUDOC", "SU DOC"]);
-      const cH_PROV = pickCol(hiopos[0], ["Contacto", "PROVEEDOR"]);
+      const cH_FACT = pickCol(hiopos[0], ["Su Doc"]);
+      const cH_PROV = pickCol(hiopos[0], ["Contacto"]);
       const cH_NETO = pickCol(hiopos[0], ["Neto"]);
       const cH_PEND = pickCol(hiopos[0], ["Pendiente"]);
 
@@ -224,7 +224,7 @@ export default function App() {
       }
 
       // ====== MAPA HIOPOS (factura -> datos) ======
-      const hiMap = new Map<string, { proveedor: string; neto: number; pendiente: number; rows: number[] }>();
+      const hiMap = new Map<string, { proveedor: string; total_hio: number; pendiente: number; rows: number[] }>();
       const hiCount = new Map<string, number>();
 
       hiopos.forEach((r, idx) => {
@@ -236,7 +236,7 @@ export default function App() {
         if(!hiMap.has(fac)){
           hiMap.set(fac, {
             proveedor: cH_PROV ? String(r[cH_PROV] || "").trim() : "",
-            neto: cH_NETO ? parseMoney(r[cH_NETO]) : 0,
+            total_hio: cH_NETO ? parseMoney(r[cH_NETO]) : 0,
             pendiente: cH_PEND ? parseMoney(r[cH_PEND]) : 0,
             rows: [idx + 2]
           });
@@ -272,16 +272,16 @@ export default function App() {
         if(!fac) return null;
 
         const emisorD = cD_EMISOR ? String(r[cD_EMISOR] || "").trim() : "";
-        const receptorD = cD_RECEPTOR ? String(r[cD_RECEPTOR] || "").trim() : "";
         const fecha = cD_FEC ? String(r[cD_FEC]) : "";
         const totalDian = cD_TOT ? parseMoney(r[cD_TOT]) : 0;
 
         const existe = hiSet.has(fac);
-        const hiInfo = existe ? (hiMap.get(fac) || { proveedor: "", neto: 0 }) : { proveedor: "", neto: 0 };
+        const hiInfo = existe ? (hiMap.get(fac) || { proveedor: "", total_hio: 0 }) : { proveedor: "", total_hio: 0 };
         
         const provHi = hiInfo.proveedor || "";
-        const totalHiopos = hiInfo.neto || 0;
+        const totalHiopos = hiInfo.total_hio || 0;
         const diferencia = existe ? Math.abs(totalDian - totalHiopos) : 0;
+        const difValor = totalDian - totalHiopos;
         const estado = existe ? "OK" : "PENDIENTE POR INGRESAR";
 
         if(!existe){
@@ -296,12 +296,12 @@ export default function App() {
         return {
           FACTURA: fac,
           EMISOR_DIAN: emisorD,
-          RECEPTOR_DIAN: receptorD,
           PROVEEDOR_HIOPOS: provHi,
           FECHA_DIAN: fecha,
           TOTAL_DIAN: totalDian,
           TOTAL_HIOPOS: totalHiopos,
           DIFERENCIA: diferencia,
+          DIF_VALOR: difValor,
           EXISTE_EN_HIOPOS: existe ? "SI" : "NO",
           ESTADO: estado
         };
@@ -351,6 +351,7 @@ export default function App() {
     setDuplicates([]);
     setDifferences([]);
     setSearchQuery('');
+    setStatusFilter('TODOS');
     setStats({ 
       dianCount: 0, 
       hioposCount: 0, 
@@ -364,18 +365,20 @@ export default function App() {
     if (fileHioposRef.current) fileHioposRef.current.value = "";
   };
 
-  const filteredResults = results.filter(r => 
-    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.RECEPTOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredResults = results.filter(r => {
+    const matchesSearch = r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'TODOS' || r.ESTADO === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
-  const filteredDifferences = differences.filter(r => 
-    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.RECEPTOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredDifferences = differences.filter(r => {
+    const matchesSearch = r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'TODOS' || r.ESTADO === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const filteredDuplicates = duplicates.filter(r => 
     r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -557,23 +560,42 @@ export default function App() {
               />
             </div>
 
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hiopos-muted" />
-              <input 
-                type="text"
-                placeholder="Buscar factura o proveedor..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-9 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
+              <div className="relative w-full sm:w-40">
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-3 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm appearance-none cursor-pointer"
                 >
-                  <X className="w-3 h-3 text-hiopos-muted" />
-                </button>
-              )}
+                  <option value="TODOS">Todos los estados</option>
+                  <option value="OK">OK</option>
+                  <option value="PENDIENTE POR INGRESAR">Pendientes</option>
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-hiopos-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hiopos-muted" />
+                <input 
+                  type="text"
+                  placeholder="Buscar factura o proveedor..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-9 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
+                  >
+                    <X className="w-3 h-3 text-hiopos-muted" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -592,10 +614,10 @@ export default function App() {
                     <tr className="bg-hiopos-header border-b border-hiopos-line">
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Emisor (DIAN)</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Receptor (DIAN)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (HIOPOS)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider text-center">HIOPOS</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Estado</th>
                     </tr>
@@ -605,10 +627,10 @@ export default function App() {
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
                         <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
                         <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.RECEPTOR_DIAN}>{r.RECEPTOR_DIAN}</td>
                         <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
                         <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_DIAN}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                             r.EXISTE_EN_HIOPOS === 'SI' ? 'bg-emerald-50 border-emerald-200 text-hiopos-ok' : 'bg-rose-50 border-rose-200 text-hiopos-bad'
@@ -642,7 +664,7 @@ export default function App() {
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total DIAN</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total HIOPOS</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Diferencia</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Diferencia (Valor)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-hiopos-line">
@@ -652,7 +674,7 @@ export default function App() {
                         <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
-                        <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{formatCurrency(r.DIFERENCIA)}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{formatCurrency(r.DIF_VALOR)}</td>
                       </tr>
                     ))}
                     {filteredDifferences.length === 0 && (
