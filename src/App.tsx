@@ -164,6 +164,28 @@ export default function App() {
     return String(v).trim();
   };
 
+  const normalizeProveedor = (v: any) => {
+    return String(v ?? "")
+      .toUpperCase()
+      .trim()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/[^A-Z0-9 ]/g, "");
+  };
+
+  const proveedorExisteEnHiopos = (proveedorDian: string, proveedoresSet: Set<string>) => {
+    const p = normalizeProveedor(proveedorDian);
+    if (!p) return false;
+    if (proveedoresSet.has(p)) return true;
+
+    for (const prov of proveedoresSet) {
+      if (prov.includes(p) || p.includes(prov)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const getDianKeys = (row: any, dCols: any) => {
     const keys = new Set<string>();
 
@@ -329,6 +351,7 @@ export default function App() {
         prefijo: pickCol(dian[0], ["Prefijo"]),
         cufe: pickCol(dian[0], ["CUFE/CUDE", "CUFE", "CUDE"]),
         emisor: pickCol(dian[0], ["Nombre Emisor"]),
+        nitEmisor: pickCol(dian[0], ["NIT Emisor"]),
         fecha: pickCol(dian[0], ["Fecha Emisión", "Fecha Emision"]),
         total: pickCol(dian[0], ["Total"])
       };
@@ -338,6 +361,7 @@ export default function App() {
         serieNumero: pickCol(hiopos[0], ["Serie / Número", "Serie / Numero", "Serie / NÃºmero"]),
         fecha: pickCol(hiopos[0], ["Fecha Doc"]),
         proveedor: pickCol(hiopos[0], ["Contacto"]),
+        nitProveedor: pickCol(hiopos[0], ["NIT", "Identificación", "Identificacion"]),
         almacen: pickCol(hiopos[0], ["Almacén", "AlmacÃ©n"]),
         neto: pickCol(hiopos[0], ["Neto"]),
         pendiente: pickCol(hiopos[0], ["Pendiente"])
@@ -350,15 +374,24 @@ export default function App() {
       // 2) Construir un índice real de HIOPOS
       const hiIndex = new Map();   // key -> info
       const hiRows: any[] = [];    // filas normalizadas
+      const proveedoresHioposSet = new Set<string>();
 
       hiopos.forEach(r => {
         const keys = getHioposKeys(r, hCols);
         if (!keys.length) return;
 
+        const provRaw = r[hCols.proveedor];
+        const provNorm = normalizeProveedor(provRaw);
+        if (provNorm) proveedoresHioposSet.add(provNorm);
+
+        const nitRaw = r[hCols.nitProveedor];
+        const nitNorm = onlyDigits(nitRaw);
+        if (nitNorm) proveedoresHioposSet.add(nitNorm);
+
         const info = {
           suDoc: cleanText(r[hCols.suDoc]),
           serieNumero: cleanText(r[hCols.serieNumero]),
-          proveedor: cleanText(r[hCols.proveedor]),
+          proveedor: cleanText(provRaw),
           fecha: formatExcelDate(r[hCols.fecha]),
           almacen: cleanText(r[hCols.almacen]),
           total_hio: parseMoney(r[hCols.neto]),
@@ -381,6 +414,18 @@ export default function App() {
       const out = dian.map(r => {
         const dKeys = getDianKeys(r, dCols);
         if (!dKeys.length) return null;
+
+        const emisorDian = r[dCols.emisor];
+        const nitDian = onlyDigits(r[dCols.nitEmisor]);
+        
+        // ✅ SOLO revisar proveedores que sí existen en HIOPOS
+        // Esto excluye gastos administrativos, otras sedes, etc.
+        const existeProv = proveedorExisteEnHiopos(emisorDian, proveedoresHioposSet) || 
+                          (nitDian && proveedoresHioposSet.has(nitDian));
+
+        if (!existeProv) {
+          return null;
+        }
 
         let hiInfo = null;
         for (const k of dKeys) {
