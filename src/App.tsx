@@ -17,24 +17,43 @@ import {
   TrendingUp,
   Clock,
   DollarSign,
+  ChevronDown,
   Search,
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ComparisonResult {
-  FACTURA: string;
+  FACTURA_DIAN: string;
+  FACTURA_HIOPOS: string;
+  DOCUMENTO_HIOPOS: string;
+  TIPO_DOCUMENTO: string;
   CUFE_CUDE: string;
   EMISOR_DIAN: string;
   RECEPTOR_DIAN: string;
   PROVEEDOR_HIOPOS: string;
+  ALMACEN_HIOPOS: string;
   FECHA_DIAN: string;
   TOTAL_DIAN: number;
   TOTAL_HIOPOS: number;
   DIFERENCIA: number;
   DIF_VALOR: number;
-  EXISTE_EN_HIOPOS: 'SI' | 'NO';
+  HIOPOS: 'SI' | 'NO';
   ESTADO: string;
+  OBSERVACION: string;
+}
+
+interface SoloHioposResult {
+  FACTURA_HIOPOS: string;
+  DOCUMENTO_HIOPOS: string;
+  TIPO_DOCUMENTO: string;
+  PROVEEDOR_HIOPOS: string;
+  ALMACEN_HIOPOS: string;
+  FECHA_HIOPOS: string;
+  TOTAL_HIOPOS: number;
+  EXISTE_EN_DIAN: 'NO';
+  ESTADO: string;
+  OBSERVACION?: string;
 }
 
 interface DuplicateResult {
@@ -51,6 +70,8 @@ interface Stats {
   pendingValue: number;
   diffCount: number;
   duplicateCount: number;
+  soloHioposCount: number;
+  conciliadasCount: number;
 }
 
 export default function App() {
@@ -59,7 +80,8 @@ export default function App() {
   const [results, setResults] = useState<ComparisonResult[]>([]);
   const [duplicates, setDuplicates] = useState<DuplicateResult[]>([]);
   const [differences, setDifferences] = useState<ComparisonResult[]>([]);
-  const [activeTab, setActiveTab] = useState<'general' | 'diferencias' | 'duplicados'>('general');
+  const [hioposNoDian, setHioposNoDian] = useState<SoloHioposResult[]>([]);
+  const [activeTab, setActiveTab] = useState<'general' | 'dianNoHiopos' | 'hioposNoDian' | 'diferencias' | 'duplicados'>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
   const [stats, setStats] = useState<Stats>({ 
@@ -68,9 +90,13 @@ export default function App() {
     pendingCount: 0, 
     pendingValue: 0,
     diffCount: 0,
-    duplicateCount: 0
+    duplicateCount: 0,
+    soloHioposCount: 0,
+    conciliadasCount: 0
   });
   const [loading, setLoading] = useState(false);
+  const [brand, setBrand] = useState<'ROCOTO' | 'ARREBATAO' | 'GENERAL'>('GENERAL');
+  const [auditType, setAuditType] = useState<'COMPRAS' | 'VENTAS'>('COMPRAS');
   const [message, setMessage] = useState<{ text: string; type: 'info' | 'error' | 'success' } | null>(null);
 
   const fileDianRef = useRef<HTMLInputElement>(null);
@@ -78,38 +104,116 @@ export default function App() {
 
   const normHeader = (s: any) => {
     return String(s || "")
-      .replace(/\u00A0/g, " ") // NBSP
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // sin tildes
+      .replace(/\u00A0/g, " ")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .toUpperCase();
   };
 
-  const normalizeFactura = (v: any) => {
-    if (v === null || v === undefined) return "";
-    let s = (typeof v === "number") ? String(Math.trunc(v)) : String(v);
-    s = s.trim().toUpperCase();
-    // deja solo A-Z 0-9
-    s = s.replace(/[^A-Z0-9]/g, "");
-    return s;
+  const cleanText = (v: any) => {
+    return String(v ?? "").trim();
+  };
+
+  const normalizeKey = (v: any) => {
+    return String(v ?? "")
+      .toUpperCase()
+      .trim()
+      .replace(/\s+/g, "")
+      .replace(/\//g, "")
+      .replace(/[^A-Z0-9]/g, "");
+  };
+
+  const onlyDigits = (v: any) => {
+    const s = String(v ?? "").replace(/\D/g, "");
+    return s || "";
   };
 
   const parseMoney = (v: any) => {
-    if (v === null || v === undefined) return 0;
+    if (v === null || v === undefined || v === "") return 0;
     if (typeof v === "number") return v;
 
     let s = String(v).trim();
-    if (!s) return 0;
-
-    s = s.replace(/[^\d,.-]/g, "");  // quita $ y letras
-    // Caso Colombia: miles con punto, decimales con coma (a veces)
-    // quitamos puntos de miles
+    s = s.replace(/[^\d,.-]/g, "");
     s = s.replace(/\./g, "");
-    // convertimos coma decimal a punto
     s = s.replace(/,/g, ".");
-
     const n = Number(s);
     return isNaN(n) ? 0 : n;
+  };
+
+  const pickCol = (sampleRow: any, options: string[]) => {
+    const keys = Object.keys(sampleRow || {});
+    const map = new Map(keys.map(k => [normHeader(k), k]));
+    for (const opt of options){
+      const hit = map.get(normHeader(opt));
+      if (hit) return hit;
+    }
+    return null;
+  };
+
+  const formatExcelDate = (v: any) => {
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "number") {
+      const date = XLSX.SSF.parse_date_code(v);
+      if (!date) return String(v);
+      const dd = String(date.d).padStart(2, "0");
+      const mm = String(date.m).padStart(2, "0");
+      const yy = String(date.y);
+      return `${dd}-${mm}-${yy}`;
+    }
+    return String(v).trim();
+  };
+
+  const getDianKeys = (row: any, dCols: any) => {
+    const keys = new Set<string>();
+
+    const factura = cleanText(row[dCols.factura]);
+    const folio = cleanText(row[dCols.folio]);
+    const prefijo = cleanText(row[dCols.prefijo]);
+
+    // Factura completa
+    if (factura) {
+      keys.add(normalizeKey(factura));
+      const facDigits = onlyDigits(factura);
+      if (facDigits) keys.add(facDigits);
+    }
+
+    // Prefijo + folio
+    if (prefijo && folio) {
+      keys.add(normalizeKey(prefijo + folio));
+    }
+
+    // Solo folio
+    if (folio) {
+      keys.add(normalizeKey(folio));
+      const folDigits = onlyDigits(folio);
+      if (folDigits) keys.add(folDigits);
+    }
+
+    return Array.from(keys).filter(Boolean);
+  };
+
+  const getHioposKeys = (row: any, hCols: any) => {
+    const keys = new Set<string>();
+
+    const suDoc = cleanText(row[hCols.suDoc]);
+    const serieNumero = cleanText(row[hCols.serieNumero]);
+
+    // Su Doc (ej: IM5097543, FEAC13772, 4378)
+    if (suDoc) {
+      keys.add(normalizeKey(suDoc));
+      const suDocDigits = onlyDigits(suDoc);
+      if (suDocDigits) keys.add(suDocDigits);
+    }
+
+    // Serie / Número (ej: FC / 31282)
+    if (serieNumero) {
+      keys.add(normalizeKey(serieNumero));      // FC31282
+      const serieDigits = onlyDigits(serieNumero);
+      if (serieDigits) keys.add(serieDigits);   // 31282
+    }
+
+    return Array.from(keys).filter(Boolean);
   };
 
   const formatCurrency = (n: number) => {
@@ -120,12 +224,18 @@ export default function App() {
     }).format(n);
   };
 
-  const findHeaderRow = (matrix: any[][], requiredHeaders: string[]) => {
+  const findHeaderRow = (matrix: any[][], requiredHeaders: string[], allRequired: boolean = true) => {
     const req = requiredHeaders.map(normHeader);
     for (let i = 0; i < Math.min(matrix.length, 40); i++){
       const row = (matrix[i] || []).map(normHeader);
-      const ok = req.every(h => row.includes(h));
-      if (ok) return i;
+      if (allRequired) {
+        const ok = req.every(h => row.includes(h));
+        if (ok) return i;
+      } else {
+        // Para HIOPOS, basta con que encuentre AL MENOS UNA de las opciones de factura
+        const ok = req.some(h => row.includes(h));
+        if (ok) return i;
+      }
     }
     return 0;
   };
@@ -141,9 +251,9 @@ export default function App() {
 
     const required = (type === "DIAN")
       ? ["Factura", "Total"]
-      : ["Su Doc", "Neto"];
+      : ["Serie / Número", "Serie / Numero", "Serie Numero", "Serie / NÃºmero", "Su Doc", "Documento", "Factura", "No Factura", "Número", "Numero"];
 
-    const headerRowIndex = findHeaderRow(matrix, required);
+    const headerRowIndex = findHeaderRow(matrix, required, type === "DIAN");
     const rawHeaders = (matrix[headerRowIndex] || []).map(h => String(h || "").trim());
     const headersNorm = rawHeaders.map(normHeader);
 
@@ -165,14 +275,23 @@ export default function App() {
     return rows;
   };
 
-  const pickCol = (sampleRow: any, options: string[]) => {
-    const keys = Object.keys(sampleRow || {}); // ya normalizados
-    const set = new Set(keys);
-    for (const opt of options){
-      const k = normHeader(opt);
-      if (set.has(k)) return k;
-    }
-    return null;
+  const detectHioposColumns = (sampleRow: any) => {
+    return {
+      suDoc: pickCol(sampleRow, ["Su Doc", "SU DOC"]),
+      serieNumero: pickCol(sampleRow, [
+        "Serie / Número",
+        "Serie / Numero",
+        "Serie / NÃºmero"
+      ]),
+      fechaDoc: pickCol(sampleRow, ["Fecha Doc"]),
+      proveedor: pickCol(sampleRow, ["Contacto"]),
+      estado: pickCol(sampleRow, ["Estado"]),
+      almacen: pickCol(sampleRow, ["Almacén", "AlmacÃ©n"]),
+      empleado: pickCol(sampleRow, ["Empleado"]),
+      base: pickCol(sampleRow, ["Base"]),
+      neto: pickCol(sampleRow, ["Neto"]),
+      pendiente: pickCol(sampleRow, ["Pendiente"])
+    };
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'dian' | 'hiopos') => {
@@ -203,135 +322,242 @@ export default function App() {
       const dian = dianData;
       const hiopos = hioposData;
 
-      // ====== COLUMNAS (FORMATO REAL) ======
-      const cD_FACT = pickCol(dian[0], ["Factura", "FACTURA"]);
-      const cD_CUFE = pickCol(dian[0], ["CUFE/CUDE", "CUFE", "CUDE"]);
-      const cD_EMISOR = pickCol(dian[0], ["Nombre Emisor", "Emisor"]);
-      const cD_RECEP = pickCol(dian[0], ["Nombre Receptor", "Receptor"]);
-      const cD_FEC  = pickCol(dian[0], ["Fecha Emisión", "Fecha Emision", "Fecha"]);
-      const cD_TOT  = pickCol(dian[0], ["Total", "TOTAL"]);
+      // 1) Detectar columnas
+      const dCols = {
+        factura: pickCol(dian[0], ["Factura"]),
+        folio: pickCol(dian[0], ["Folio"]),
+        prefijo: pickCol(dian[0], ["Prefijo"]),
+        cufe: pickCol(dian[0], ["CUFE/CUDE", "CUFE", "CUDE"]),
+        emisor: pickCol(dian[0], ["Nombre Emisor"]),
+        fecha: pickCol(dian[0], ["Fecha Emisión", "Fecha Emision"]),
+        total: pickCol(dian[0], ["Total"])
+      };
 
-      const cH_FACT = pickCol(hiopos[0], ["Su Doc"]);
-      const cH_PROV = pickCol(hiopos[0], ["Contacto"]);
-      const cH_NETO = pickCol(hiopos[0], ["Neto"]);
-      const cH_PEND = pickCol(hiopos[0], ["Pendiente"]);
+      const hCols = {
+        suDoc: pickCol(hiopos[0], ["Su Doc", "SU DOC"]),
+        serieNumero: pickCol(hiopos[0], ["Serie / Número", "Serie / Numero", "Serie / NÃºmero"]),
+        fecha: pickCol(hiopos[0], ["Fecha Doc"]),
+        proveedor: pickCol(hiopos[0], ["Contacto"]),
+        almacen: pickCol(hiopos[0], ["Almacén", "AlmacÃ©n"]),
+        neto: pickCol(hiopos[0], ["Neto"]),
+        pendiente: pickCol(hiopos[0], ["Pendiente"])
+      };
 
-      if(!cD_FACT){ 
-        setMessage({ text: "❌ No encuentro columna 'Factura' en DIAN.", type: 'error' });
-        setLoading(false);
-        return; 
+      if (!dCols.factura && (!dCols.prefijo || !dCols.folio)) {
+        throw new Error("No encontré la columna Factura (o Prefijo/Folio) en DIAN.");
       }
-      if(!cH_FACT){ 
-        setMessage({ text: "❌ No encuentro columna 'Su Doc' en HIOPOS.", type: 'error' });
-        setLoading(false);
-        return; 
-      }
 
-      // ====== MAPA HIOPOS (factura -> datos) ======
-      const hiMap = new Map<string, { proveedor: string; total_hio: number; pendiente: number; rows: number[] }>();
-      const hiCount = new Map<string, number>();
+      // 2) Construir un índice real de HIOPOS
+      const hiIndex = new Map();   // key -> info
+      const hiRows: any[] = [];    // filas normalizadas
 
-      hiopos.forEach((r, idx) => {
-        const fac = normalizeFactura(r[cH_FACT]);
-        if(!fac) return;
+      hiopos.forEach(r => {
+        const keys = getHioposKeys(r, hCols);
+        if (!keys.length) return;
 
-        hiCount.set(fac, (hiCount.get(fac) || 0) + 1);
+        const info = {
+          suDoc: cleanText(r[hCols.suDoc]),
+          serieNumero: cleanText(r[hCols.serieNumero]),
+          proveedor: cleanText(r[hCols.proveedor]),
+          fecha: formatExcelDate(r[hCols.fecha]),
+          almacen: cleanText(r[hCols.almacen]),
+          total_hio: parseMoney(r[hCols.neto]),
+          pendiente_hio: parseMoney(r[hCols.pendiente]),
+          rawRow: r
+        };
 
-        if(!hiMap.has(fac)){
-          hiMap.set(fac, {
-            proveedor: cH_PROV ? String(r[cH_PROV] || "").trim() : "",
-            total_hio: cH_NETO ? parseMoney(r[cH_NETO]) : 0,
-            pendiente: cH_PEND ? parseMoney(r[cH_PEND]) : 0,
-            rows: [idx + 2]
-          });
-        } else {
-          hiMap.get(fac)!.rows.push(idx + 2);
-        }
+        hiRows.push({ keys, info });
+
+        keys.forEach(k => {
+          if (!hiIndex.has(k)) hiIndex.set(k, info);
+        });
       });
 
-      const hiSet = new Set([...hiMap.keys()]);
-
-      // ====== DUPLICADOS ======
-      const duplicateList: DuplicateResult[] = [];
-      hiCount.forEach((count, fac) => {
-        if(count > 1){
-          const base = hiMap.get(fac) || { proveedor: "", rows: [] };
-          duplicateList.push({
-            FACTURA: fac,
-            REPETICIONES: count,
-            PROVEEDOR_HIOPOS: base.proveedor || "",
-            FILAS_HIOPOS: base.rows.join(", ")
-          });
-        }
-      });
-      setDuplicates(duplicateList);
-
-      // ====== CRUCE DIAN vs HIOPOS ======
+      // 3) Cruce DIAN → HIOPOS correcto
       let pendingCount = 0;
       let pendingValue = 0;
       let diffCount = 0;
 
-      const out: ComparisonResult[] = dian.map(r => {
-        const fac = normalizeFactura(r[cD_FACT]);
-        if(!fac) return null;
+      const out = dian.map(r => {
+        const dKeys = getDianKeys(r, dCols);
+        if (!dKeys.length) return null;
 
-        const cufe = cD_CUFE ? String(r[cD_CUFE] || "").trim() : "";
-        const emisorD = cD_EMISOR ? String(r[cD_EMISOR] || "").trim() : "";
-        const receptorD = cD_RECEP ? String(r[cD_RECEP] || "").trim() : "";
-        const fecha = cD_FEC ? String(r[cD_FEC]) : "";
-        const totalDian = cD_TOT ? parseMoney(r[cD_TOT]) : 0;
+        let hiInfo = null;
+        for (const k of dKeys) {
+          if (hiIndex.has(k)) {
+            hiInfo = hiIndex.get(k);
+            break;
+          }
+        }
 
-        const existe = hiSet.has(fac);
-        const hiInfo = existe ? (hiMap.get(fac) || { proveedor: "", total_hio: 0 }) : { proveedor: "", total_hio: 0 };
-        
-        const provHi = hiInfo.proveedor || "";
-        const totalHiopos = hiInfo.total_hio || 0;
-        const diferencia = existe ? Math.abs(totalDian - totalHiopos) : 0;
+        const existe = !!hiInfo;
+        const totalDian = parseMoney(r[dCols.total]);
+        const totalHiopos = hiInfo?.total_hio || 0;
+        const diff = Math.abs(totalDian - totalHiopos);
         const difValor = totalDian - totalHiopos;
-        const estado = existe ? "OK" : "PENDIENTE POR INGRESAR";
 
-        if(!existe){
+        if (!existe) {
           pendingCount++;
           pendingValue += totalDian;
         }
 
-        if (existe && diferencia > 1) {
+        let estado = existe ? "OK" : "PENDIENTE POR INGRESAR";
+        let observacion = existe ? "" : "FACTURA NO ENCONTRADA EN HIOPOS";
+
+        if (existe && diff > 1) {
+          estado = "DIFERENCIA DE VALORES";
+          observacion = `DIFERENCIA DE VALOR: ${formatCurrency(difValor)}`;
           diffCount++;
         }
 
+        const facDian = cleanText(r[dCols.factura]) || `${cleanText(r[dCols.prefijo])}${cleanText(r[dCols.folio])}`;
+
         return {
-          FACTURA: fac,
-          CUFE_CUDE: cufe,
-          EMISOR_DIAN: emisorD,
-          RECEPTOR_DIAN: receptorD,
-          PROVEEDOR_HIOPOS: provHi,
-          FECHA_DIAN: fecha,
+          FACTURA_DIAN: facDian,
+          FACTURA_HIOPOS: hiInfo?.suDoc || hiInfo?.serieNumero || "",
+          DOCUMENTO_HIOPOS: hiInfo?.suDoc || hiInfo?.serieNumero || "",
+          TIPO_DOCUMENTO: facDian.substring(0, 2).toUpperCase(),
+          CUFE_CUDE: cleanText(r[dCols.cufe]),
+          EMISOR_DIAN: cleanText(r[dCols.emisor]),
+          RECEPTOR_DIAN: "",
+          PROVEEDOR_HIOPOS: hiInfo?.proveedor || "",
+          ALMACEN_HIOPOS: hiInfo?.almacen || "",
+          FECHA_DIAN: formatExcelDate(r[dCols.fecha]),
           TOTAL_DIAN: totalDian,
           TOTAL_HIOPOS: totalHiopos,
-          DIFERENCIA: diferencia,
+          DIFERENCIA: diff,
           DIF_VALOR: difValor,
-          EXISTE_EN_HIOPOS: existe ? "SI" : "NO",
-          ESTADO: estado
+          HIOPOS: existe ? "SI" : "NO",
+          ESTADO: estado,
+          OBSERVACION: observacion
         };
       }).filter(Boolean) as ComparisonResult[];
 
+      // 4) Cruce inverso HIOPOS → DIAN correcto
+      const dianIndex = new Map();
+
+      dian.forEach(r => {
+        const keys = getDianKeys(r, dCols);
+        if (!keys.length) return;
+
+        const info = {
+          factura: cleanText(r[dCols.factura]),
+          folio: cleanText(r[dCols.folio]),
+          prefijo: cleanText(r[dCols.prefijo]),
+          cufe: cleanText(r[dCols.cufe]),
+          emisor: cleanText(r[dCols.emisor]),
+          fecha: formatExcelDate(r[dCols.fecha]),
+          total: parseMoney(r[dCols.total])
+        };
+
+        keys.forEach(k => {
+          if (!dianIndex.has(k)) dianIndex.set(k, info);
+        });
+      });
+
+      const soloHioposNoDian = hiRows
+        .filter(item => {
+          return !item.keys.some(k => dianIndex.has(k));
+        })
+        .map(item => ({
+          FACTURA_HIOPOS: item.info.suDoc || item.info.serieNumero,
+          DOCUMENTO_HIOPOS: item.info.serieNumero,
+          TIPO_DOCUMENTO: (item.info.suDoc || item.info.serieNumero).substring(0, 2).toUpperCase(),
+          PROVEEDOR_HIOPOS: item.info.proveedor,
+          ALMACEN_HIOPOS: item.info.almacen,
+          FECHA_HIOPOS: item.info.fecha,
+          TOTAL_HIOPOS: item.info.total_hio,
+          EXISTE_EN_DIAN: 'NO' as const,
+          ESTADO: "INGRESADO EN HIOPOS Y NO REGISTRADO EN DIAN",
+          OBSERVACION: ""
+        }));
+
+      // 5) Duplicados HIOPOS
+      const hiCount = new Map();
+      hiRows.forEach(item => {
+        const mainKey = item.keys[0];
+        hiCount.set(mainKey, (hiCount.get(mainKey) || 0) + 1);
+      });
+
+      const duplicateList: DuplicateResult[] = [];
+      const processedDups = new Set();
+      hiRows.forEach(item => {
+        const mainKey = item.keys[0];
+        if (hiCount.get(mainKey) > 1 && !processedDups.has(mainKey)) {
+          processedDups.add(mainKey);
+          duplicateList.push({
+            FACTURA: item.info.suDoc || item.info.serieNumero,
+            REPETICIONES: hiCount.get(mainKey),
+            PROVEEDOR_HIOPOS: item.info.proveedor,
+            FILAS_HIOPOS: "Múltiples"
+          });
+        }
+      });
+
       setResults(out);
-      setDifferences(out.filter(r => r.EXISTE_EN_HIOPOS === 'SI' && r.DIFERENCIA > 1));
+      setDifferences(out.filter(r => r.ESTADO === "DIFERENCIA DE VALORES"));
+      setDuplicates(duplicateList);
+      setHioposNoDian(soloHioposNoDian);
+
       setStats({
-        dianCount: out.length,
-        hioposCount: hiSet.size,
+        dianCount: dian.length,
+        hioposCount: hiopos.length,
         pendingCount,
         pendingValue,
         diffCount,
-        duplicateCount: duplicateList.length
+        duplicateCount: duplicateList.length,
+        soloHioposCount: soloHioposNoDian.length,
+        conciliadasCount: out.filter(x => x.ESTADO === 'OK').length
       });
+
       setMessage({ text: "✅ Cruce completado correctamente.", type: 'success' });
-    } catch (err) {
-      console.error(err);
-      setMessage({ text: "❌ Error procesando el cruce. Revisa el formato de los archivos.", type: 'error' });
+    } catch (err: any) {
+      console.error("Error al comparar archivos:", err);
+      setMessage({ 
+        text: `❌ Error: ${err?.message || "Revisa nombres de columnas y filas vacías."}`, 
+        type: 'error' 
+      });
     } finally {
       setLoading(false);
     }
+  };
+
+  const exportarExcel = () => {
+    let data: any[] = [];
+    let filename = "Reporte_Conciliacion.xlsx";
+    let sheetName = "Reporte";
+
+    if (activeTab === 'general') {
+      data = filteredResults;
+      filename = "Reporte_General_DIAN_vs_HIOPOS.xlsx";
+      sheetName = "General";
+    } else if (activeTab === 'dianNoHiopos') {
+      data = filteredDianNoHiopos;
+      filename = "Pendientes_DIAN_no_HIOPOS.xlsx";
+      sheetName = "DIAN_no_HIOPOS";
+    } else if (activeTab === 'hioposNoDian') {
+      data = filteredHioposNoDian;
+      filename = "HIOPOS_no_DIAN.xlsx";
+      sheetName = "HIOPOS_no_DIAN";
+    } else if (activeTab === 'diferencias') {
+      data = filteredDifferences;
+      filename = "Diferencias_Valor.xlsx";
+      sheetName = "Diferencias";
+    } else if (activeTab === 'duplicados') {
+      data = filteredDuplicates;
+      filename = "Duplicados_HIOPOS.xlsx";
+      sheetName = "Duplicados";
+    }
+
+    if (data.length === 0) {
+      setMessage({ text: "No hay datos para exportar en esta pestaña.", type: 'info' });
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filename);
   };
 
   const handleDownload = () => {
@@ -340,15 +566,19 @@ export default function App() {
     const pending = results
       .filter(r => String(r.ESTADO || "").toUpperCase().includes("PENDIENTE"))
       .map(r => ({
-        FACTURA: r.FACTURA,
+        FACTURA: r.FACTURA_DIAN,
+        DOCUMENTO_HIOPOS: r.DOCUMENTO_HIOPOS,
+        TIPO_DOCUMENTO: r.TIPO_DOCUMENTO,
         CUFE_CUDE: r.CUFE_CUDE,
         EMISOR_DIAN: r.EMISOR_DIAN,
         RECEPTOR_DIAN: r.RECEPTOR_DIAN,
         PROVEEDOR_HIOPOS: r.PROVEEDOR_HIOPOS,
+        ALMACEN_HIOPOS: r.ALMACEN_HIOPOS,
         FECHA_DIAN: r.FECHA_DIAN,
         TOTAL_DIAN: r.TOTAL_DIAN,
         TOTAL_HIOPOS: r.TOTAL_HIOPOS,
-        ESTADO: r.ESTADO
+        ESTADO: r.ESTADO,
+        OBSERVACION: r.OBSERVACION
       }));
 
     if (pending.length === 0) {
@@ -362,12 +592,36 @@ export default function App() {
     XLSX.writeFile(wb, "Pendientes_DIAN_vs_HIOPOS.xlsx");
   };
 
+  const handleDownloadHioposNoDian = () => {
+    if (hioposNoDian.length === 0) {
+      setMessage({ text: "✅ No hay registros en HIOPOS pendientes frente a DIAN.", type: 'success' });
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const data = hioposNoDian.map(r => ({
+      FACTURA_HIOPOS: r.FACTURA_HIOPOS,
+      DOCUMENTO_HIOPOS: r.DOCUMENTO_HIOPOS,
+      TIPO_DOCUMENTO: r.TIPO_DOCUMENTO,
+      PROVEEDOR_HIOPOS: r.PROVEEDOR_HIOPOS,
+      ALMACEN_HIOPOS: r.ALMACEN_HIOPOS,
+      FECHA_HIOPOS: r.FECHA_HIOPOS,
+      TOTAL_HIOPOS: r.TOTAL_HIOPOS,
+      EXISTE_EN_DIAN: r.EXISTE_EN_DIAN,
+      ESTADO: r.ESTADO
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, "HIOPOS_NO_DIAN");
+    XLSX.writeFile(wb, "Hiopos_no_registrado_en_DIAN.xlsx");
+  };
+
   const handleClear = () => {
     setDianData(null);
     setHioposData(null);
     setResults([]);
     setDuplicates([]);
     setDifferences([]);
+    setHioposNoDian([]);
     setSearchQuery('');
     setStatusFilter('TODOS');
     setStats({ 
@@ -376,31 +630,46 @@ export default function App() {
       pendingCount: 0, 
       pendingValue: 0,
       diffCount: 0,
-      duplicateCount: 0
+      duplicateCount: 0,
+      soloHioposCount: 0
     });
+    setBrand('GENERAL');
+    setAuditType('COMPRAS');
     setMessage(null);
     if (fileDianRef.current) fileDianRef.current.value = "";
     if (fileHioposRef.current) fileHioposRef.current.value = "";
   };
 
   const filteredResults = results.filter(r => {
-    const matchesSearch = r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = (r.FACTURA_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (r.EMISOR_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.PROVEEDOR_HIOPOS || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'TODOS' || r.ESTADO === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const filteredDifferences = differences.filter(r => {
-    const matchesSearch = r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      r.EMISOR_DIAN.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = (r.FACTURA_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (r.EMISOR_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'TODOS' || r.ESTADO === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const filteredDuplicates = duplicates.filter(r => 
-    r.FACTURA.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    r.PROVEEDOR_HIOPOS.toLowerCase().includes(searchQuery.toLowerCase())
+    (r.FACTURA || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (r.PROVEEDOR_HIOPOS || "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredHioposNoDian = hioposNoDian.filter(r => 
+    (r.FACTURA_HIOPOS || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (r.PROVEEDOR_HIOPOS || "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredDianNoHiopos = results.filter(r => 
+    r.HIOPOS === 'NO' && (
+      (r.FACTURA_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (r.EMISOR_DIAN || "").toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
 
   return (
@@ -416,6 +685,53 @@ export default function App() {
             Sube los reportes de facturación para identificar discrepancias entre la DIAN y el sistema HIOPOS.
           </p>
         </header>
+
+        {/* Selectors */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          {/* Audit Type Selector */}
+          <div className="flex items-center gap-4 bg-hiopos-card border border-hiopos-line rounded-xl p-4 shadow-sm">
+            <span className="text-sm font-bold text-hiopos-muted">Tipo de Auditoría:</span>
+            <div className="flex gap-3">
+              {(['COMPRAS', 'VENTAS'] as const).map((t) => (
+                <label key={t} className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="radio" 
+                    name="auditType" 
+                    value={t} 
+                    checked={auditType === t}
+                    onChange={() => setAuditType(t)}
+                    className="w-4 h-4 text-hiopos-primary border-hiopos-line focus:ring-hiopos-primary"
+                  />
+                  <span className={`text-sm transition-colors ${auditType === t ? 'text-hiopos-primary font-bold' : 'text-hiopos-muted group-hover:text-hiopos-txt'}`}>
+                    {t.charAt(0) + t.slice(1).toLowerCase()}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Brand Selector */}
+          <div className="flex items-center gap-4 bg-hiopos-card border border-hiopos-line rounded-xl p-4 shadow-sm">
+            <span className="text-sm font-bold text-hiopos-muted">Marca:</span>
+            <div className="flex gap-3">
+              {(['GENERAL', 'ROCOTO', 'ARREBATAO'] as const).map((b) => (
+                <label key={b} className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="radio" 
+                    name="brand" 
+                    value={b} 
+                    checked={brand === b}
+                    onChange={() => setBrand(b)}
+                    className="w-4 h-4 text-hiopos-primary border-hiopos-line focus:ring-hiopos-primary"
+                  />
+                  <span className={`text-sm transition-colors ${brand === b ? 'text-hiopos-primary font-bold' : 'text-hiopos-muted group-hover:text-hiopos-txt'}`}>
+                    {b.charAt(0) + b.slice(1).toLowerCase()}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* Upload Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -469,28 +785,20 @@ export default function App() {
           </motion.div>
         </div>
 
-        {/* Actions & Stats */}
-        <div className="bg-hiopos-card border border-hiopos-line rounded-xl p-5 shadow-sm mb-6">
+        {/* Actions & Summary Cards */}
+        <div className="mb-6">
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <button 
               onClick={handleCompare}
               disabled={loading || !dianData || !hioposData}
-              className="px-5 py-2.5 bg-hiopos-primary hover:bg-hiopos-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
+              className="px-5 py-2.5 bg-hiopos-primary hover:bg-hiopos-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center gap-2 text-sm shadow-md active:scale-95"
             >
               <ArrowRightLeft className="w-4 h-4" />
               Comparar Archivos
             </button>
             <button 
-              onClick={handleDownload}
-              disabled={results.length === 0}
-              className="px-5 py-2.5 bg-hiopos-card border border-hiopos-line hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-hiopos-txt font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
-            >
-              <Download className="w-4 h-4" />
-              Descargar Excel
-            </button>
-            <button 
               onClick={handleClear}
-              className="px-5 py-2.5 bg-hiopos-card border border-hiopos-line hover:bg-gray-50 text-hiopos-txt font-semibold rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
+              className="px-5 py-2.5 bg-white border border-hiopos-line hover:bg-gray-50 text-hiopos-txt font-bold rounded-xl transition-all flex items-center gap-2 text-sm shadow-sm active:scale-95"
             >
               <Trash2 className="w-4 h-4" />
               Limpiar
@@ -502,7 +810,7 @@ export default function App() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0 }}
-                  className={`flex items-center gap-2 text-xs font-bold ${
+                  className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg bg-white border border-hiopos-line shadow-sm ${
                     message.type === 'error' ? 'text-hiopos-bad' : 
                     message.type === 'success' ? 'text-hiopos-ok' : 'text-hiopos-primary'
                   }`}
@@ -514,53 +822,78 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <StatCard 
-              label="Facturas DIAN" 
-              value={stats.dianCount.toLocaleString()} 
-              icon={<FileText className="w-4 h-4 text-hiopos-primary" />}
-            />
-            <StatCard 
-              label="Facturas HIOPOS" 
-              value={stats.hioposCount.toLocaleString()} 
-              icon={<TrendingUp className="w-4 h-4 text-hiopos-ok" />}
-            />
-            <StatCard 
-              label="Pendientes" 
-              value={stats.pendingCount.toLocaleString()} 
-              icon={<Clock className="w-4 h-4 text-amber-500" />}
-              highlight={stats.pendingCount > 0}
-            />
-            <StatCard 
-              label="Valor Pendiente" 
-              value={formatCurrency(stats.pendingValue)} 
-              icon={<DollarSign className="w-4 h-4 text-hiopos-bad" />}
-              highlight={stats.pendingValue > 0}
-            />
-            <StatCard 
-              label="Diferencias" 
-              value={stats.diffCount.toLocaleString()} 
-              icon={<ArrowRightLeft className="w-4 h-4 text-purple-500" />}
-              highlight={stats.diffCount > 0}
-            />
-            <StatCard 
-              label="Duplicados" 
-              value={stats.duplicateCount.toLocaleString()} 
-              icon={<FileSpreadsheet className="w-4 h-4 text-orange-500" />}
-              highlight={stats.duplicateCount > 0}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white border border-hiopos-line rounded-2xl p-4 shadow-sm flex flex-col gap-1">
+              <div className="text-[11px] font-bold text-hiopos-muted uppercase tracking-wider">Facturas Conciliadas</div>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-hiopos-ok">{stats.conciliadasCount}</div>
+                <div className="bg-green-50 text-green-700 p-1.5 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-hiopos-line rounded-2xl p-4 shadow-sm flex flex-col gap-1">
+              <div className="text-[11px] font-bold text-hiopos-muted uppercase tracking-wider">Pendientes Ingreso</div>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-amber-600">{stats.pendingCount}</div>
+                <div className="bg-amber-50 text-amber-700 p-1.5 rounded-lg">
+                  <Clock className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-hiopos-line rounded-2xl p-4 shadow-sm flex flex-col gap-1">
+              <div className="text-[11px] font-bold text-hiopos-muted uppercase tracking-wider">HIOPOS no DIAN</div>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-rose-600">{stats.soloHioposCount}</div>
+                <div className="bg-rose-50 text-rose-700 p-1.5 rounded-lg">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-hiopos-line rounded-2xl p-4 shadow-sm flex flex-col gap-1">
+              <div className="text-[11px] font-bold text-hiopos-muted uppercase tracking-wider">Diferencias</div>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-purple-600">{stats.diffCount}</div>
+                <div className="bg-purple-50 text-purple-700 p-1.5 rounded-lg">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-hiopos-line rounded-2xl p-4 shadow-sm flex flex-col gap-1">
+              <div className="text-[11px] font-bold text-hiopos-muted uppercase tracking-wider">Duplicadas</div>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-bold text-hiopos-txt">{stats.duplicateCount}</div>
+                <div className="bg-gray-50 text-gray-700 p-1.5 rounded-lg">
+                  <FileText className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Tabs & Search */}
+        {/* Filters & Search */}
         {results.length > 0 && (
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-            <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-wrap gap-2">
               <TabButton 
                 active={activeTab === 'general'} 
                 onClick={() => setActiveTab('general')}
                 label="General"
                 count={filteredResults.length}
+              />
+              <TabButton 
+                active={activeTab === 'dianNoHiopos'} 
+                onClick={() => setActiveTab('dianNoHiopos')}
+                label="DIAN no HIOPOS"
+                count={filteredDianNoHiopos.length}
+                color="text-amber-600"
+              />
+              <TabButton 
+                active={activeTab === 'hioposNoDian'} 
+                onClick={() => setActiveTab('hioposNoDian')}
+                label="HIOPOS no DIAN"
+                count={filteredHioposNoDian.length}
+                color="text-red-600"
               />
               <TabButton 
                 active={activeTab === 'diferencias'} 
@@ -578,41 +911,53 @@ export default function App() {
               />
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
-              <div className="relative w-full sm:w-40">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[200px]">
                 <select 
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-3 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm appearance-none cursor-pointer"
+                  className="w-full bg-white border border-hiopos-line rounded-xl py-2.5 pl-4 pr-10 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-hiopos-primary/20 focus:border-hiopos-primary transition-all shadow-sm appearance-none cursor-pointer"
                 >
                   <option value="TODOS">Todos los estados</option>
                   <option value="OK">OK</option>
-                  <option value="PENDIENTE POR INGRESAR">Pendientes</option>
+                  <option value="PENDIENTE POR INGRESAR">Pendiente por ingresar</option>
+                  <option value="INGRESADO EN HIOPOS Y NO REGISTRADO EN DIAN">HIOPOS no DIAN</option>
+                  <option value="DIFERENCIA DE VALORES">Diferencia de valores</option>
                 </select>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <svg className="w-4 h-4 text-hiopos-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <ChevronDown className="w-4 h-4 text-hiopos-muted" />
                 </div>
               </div>
 
-              <div className="relative w-full md:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hiopos-muted" />
+              <div className="relative flex-1 min-w-[280px]">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hiopos-muted" />
                 <input 
                   type="text"
-                  placeholder="Buscar factura o proveedor..."
+                  placeholder="Buscar factura, documento, emisor o proveedor..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white border border-hiopos-line rounded-lg py-2 pl-9 pr-8 text-sm focus:outline-none focus:border-hiopos-primary transition-all shadow-sm"
+                  className="w-full bg-white border border-hiopos-line rounded-xl py-2.5 pl-11 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-hiopos-primary/20 focus:border-hiopos-primary transition-all shadow-sm"
                 />
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-md transition-colors"
                   >
                     <X className="w-3 h-3 text-hiopos-muted" />
                   </button>
                 )}
+              </div>
+
+              <div className="flex gap-2">
+                <button 
+                  onClick={exportarExcel}
+                  disabled={results.length === 0 && hioposNoDian.length === 0}
+                  className="px-4 py-2.5 bg-hiopos-primary hover:bg-hiopos-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center gap-2 text-sm shadow-sm active:scale-95"
+                  title="Exportar Excel"
+                >
+                  <Download className="w-4 h-4" />
+                  Exportar Excel
+                </button>
               </div>
             </div>
           </div>
@@ -629,45 +974,67 @@ export default function App() {
               {activeTab === 'general' && (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-hiopos-header border-b border-hiopos-line">
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Emisor (DIAN)</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (DIAN)</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (HIOPOS)</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider text-center">HIOPOS</th>
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Estado</th>
+                    <tr className="bg-[#dbeafe] border-b border-hiopos-line">
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">FACTURA (DIAN)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">CUFE/CUDE</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">DOCUMENTO (HIO)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">EMISOR (DIAN)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">PROVEEDOR (HIOPOS)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">FECHA</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">TOTAL (DIAN)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">TOTAL (HIOPOS)</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-center">HIOPOS</th>
+                      <th className="px-4 py-4 text-[13px] font-bold text-[#0f172a] text-left">ESTADO</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-hiopos-line">
+                  <tbody className="divide-y divide-[#edf2f7]">
                     {filteredResults.map((r, i) => (
-                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[120px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_DIAN}</td>
-                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
-                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                            r.EXISTE_EN_HIOPOS === 'SI' ? 'bg-emerald-50 border-emerald-200 text-hiopos-ok' : 'bg-rose-50 border-rose-200 text-hiopos-bad'
+                      <tr key={i} className="hover:bg-[#f8fbff] transition-colors group">
+                        <td className="px-4 py-4">
+                          <strong className="text-sm text-hiopos-txt">{r.FACTURA_DIAN || '---'}</strong>
+                        </td>
+                        <td className="px-4 py-4 text-[11px] text-hiopos-muted font-mono truncate max-w-[120px]" title={r.CUFE_CUDE}>
+                          {r.CUFE_CUDE || '---'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-hiopos-muted font-mono">
+                          {r.DOCUMENTO_HIOPOS || '---'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-hiopos-muted truncate max-w-[180px]" title={r.EMISOR_DIAN}>
+                          {r.EMISOR_DIAN || '---'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-hiopos-muted truncate max-w-[180px]" title={r.PROVEEDOR_HIOPOS}>
+                          {r.PROVEEDOR_HIOPOS || '---'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-hiopos-muted">
+                          {r.FECHA_DIAN || '---'}
+                        </td>
+                        <td className="px-4 py-4 text-sm font-bold whitespace-nowrap">
+                          {formatCurrency(r.TOTAL_DIAN)}
+                        </td>
+                        <td className="px-4 py-4 text-sm font-bold whitespace-nowrap">
+                          {formatCurrency(r.TOTAL_HIOPOS)}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
+                            r.HIOPOS === 'SI' ? 'bg-[#dcfce7] text-[#166534]' : 'bg-[#fee2e2] text-[#b91c1c]'
                           }`}>
-                            {r.EXISTE_EN_HIOPOS}
+                            {r.HIOPOS || '---'}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-bold ${
-                            r.ESTADO === 'OK' ? 'text-hiopos-ok' : 'text-hiopos-bad'
+                        <td className="px-4 py-4">
+                          <span className={`text-sm font-bold ${
+                            r.ESTADO === 'OK' ? 'text-[#16a34a]' : 'text-[#dc2626]'
                           }`}>
-                            {r.ESTADO}
+                            {r.ESTADO || '---'}
                           </span>
                         </td>
                       </tr>
                     ))}
                     {filteredResults.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron resultados para tu búsqueda.</td>
+                        <td colSpan={9} className="px-4 py-20 text-center text-hiopos-muted text-sm italic">
+                          No se encontraron resultados para tu búsqueda.
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -678,7 +1045,8 @@ export default function App() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-hiopos-header border-b border-hiopos-line">
-                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura (HIO)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Documento (HIO)</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total DIAN</th>
                       <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total HIOPOS</th>
@@ -688,8 +1056,9 @@ export default function App() {
                   <tbody className="divide-y divide-hiopos-line">
                     {filteredDifferences.map((r, i) => (
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN}</td>
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA_HIOPOS || '---'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-hiopos-muted">{r.DOCUMENTO_HIOPOS || '---'}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN || '---'}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
                         <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
                         <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{formatCurrency(r.DIF_VALOR)}</td>
@@ -697,7 +1066,7 @@ export default function App() {
                     ))}
                     {filteredDifferences.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron diferencias de valor.</td>
+                        <td colSpan={6} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron diferencias de valor.</td>
                       </tr>
                     )}
                   </tbody>
@@ -717,15 +1086,93 @@ export default function App() {
                   <tbody className="divide-y divide-hiopos-line">
                     {filteredDuplicates.map((r, i) => (
                       <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA}</td>
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA || '---'}</td>
                         <td className="px-4 py-3 text-xs font-bold text-hiopos-bad">{r.REPETICIONES}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR_HIOPOS}</td>
-                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FILAS_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.PROVEEDOR_HIOPOS || '---'}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FILAS_HIOPOS || '---'}</td>
                       </tr>
                     ))}
                     {filteredDuplicates.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas duplicadas.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+
+              {activeTab === 'dianNoHiopos' && (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-hiopos-header border-b border-hiopos-line">
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Emisor (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (DIAN)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-hiopos-line">
+                    {filteredDianNoHiopos.map((r, i) => (
+                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA_DIAN || '---'}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[200px]" title={r.EMISOR_DIAN}>{r.EMISOR_DIAN || '---'}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_DIAN || '---'}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_DIAN)}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-bold text-hiopos-bad">
+                            {r.ESTADO || '---'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredDianNoHiopos.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas pendientes por ingresar en HIOPOS.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+
+              {activeTab === 'hioposNoDian' && (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-hiopos-header border-b border-hiopos-line">
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Factura (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Documento (HIO)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Tipo</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Proveedor (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Almacén</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Fecha (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Total (HIOPOS)</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Estado</th>
+                      <th className="px-4 py-3 text-xs font-bold text-hiopos-txt uppercase tracking-wider">Observación</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-hiopos-line">
+                    {filteredHioposNoDian.map((r, i) => (
+                      <tr key={i} className="hover:bg-hiopos-header-hover transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold">{r.FACTURA_HIOPOS}</td>
+                        <td className="px-4 py-3 font-mono text-[10px] text-hiopos-muted">{r.DOCUMENTO_HIOPOS}</td>
+                        <td className="px-4 py-3 text-[10px] font-bold text-hiopos-primary">{r.TIPO_DOCUMENTO}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted truncate max-w-[150px]" title={r.PROVEEDOR_HIOPOS}>{r.PROVEEDOR_HIOPOS}</td>
+                        <td className="px-4 py-3 text-[10px] text-hiopos-muted">{r.ALMACEN_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs text-hiopos-muted">{r.FECHA_HIOPOS}</td>
+                        <td className="px-4 py-3 text-xs font-bold">{formatCurrency(r.TOTAL_HIOPOS)}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-bold text-hiopos-bad">
+                            {r.ESTADO}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[10px] text-hiopos-muted italic">
+                          {r.OBSERVACION}
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredHioposNoDian.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-hiopos-muted text-sm">No se encontraron facturas solo en HIOPOS.</td>
                       </tr>
                     )}
                   </tbody>
@@ -767,14 +1214,14 @@ function TabButton({ active, onClick, label, count, color = "text-hiopos-primary
   return (
     <button 
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border shadow-sm ${
+      className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap border shadow-sm active:scale-95 ${
         active 
-          ? `bg-hiopos-header border-hiopos-primary text-hiopos-primary-dark` 
+          ? `bg-hiopos-primary border-hiopos-primary text-white` 
           : `bg-white border-hiopos-line text-hiopos-muted hover:bg-gray-50`
       }`}
     >
       {label}
-      <span className={`px-1.5 py-0.5 rounded-md bg-hiopos-bg text-[9px] border border-hiopos-line ${active ? 'text-hiopos-primary-dark' : color}`}>
+      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-gray-100 ' + color}`}>
         {count}
       </span>
     </button>
